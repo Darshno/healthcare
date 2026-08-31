@@ -245,42 +245,18 @@ export function PatientPortal() {
           <MaterialIcons name="chevron-right" size={20} color="#FFFFFF" />
         </Pressable>
 
-        {/* Tab Navigation */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
-          {(
-            [
-              { id: "queue", label: "Live Queue", icon: "confirmation-number" },
-              { id: "records", label: "Health Records", icon: "badge" },
-              { id: "appointments", label: "Appointments", icon: "event" },
-              { id: "medicines", label: "Medicine Stock", icon: "medication" },
-            ] as const
-          ).map((tab) => {
-            const active = activeTab === tab.id;
-            return (
-              <Pressable
-                key={tab.id}
-                onPress={() => setActiveTab(tab.id)}
-                style={[styles.tabItem, active && styles.tabItemActive]}
-              >
-                <MaterialIcons
-                  name={tab.icon}
-                  size={18}
-                  color={active ? "#087E7B" : "#6C817C"}
-                />
-                <Text style={[styles.tabItemText, active && styles.tabItemTextActive]}>
-                  {tab.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+
       </View>
 
       {/* Main Content Area */}
-      <ScrollView
-        contentContainerStyle={[styles.contentScroll, { paddingBottom: insets.bottom + 24 }]}
-        showsVerticalScrollIndicator={false}
-      >
+<ScrollView
+  contentContainerStyle={[
+    styles.contentScroll,
+    { paddingBottom: insets.bottom + 24 }
+  ]}
+  showsVerticalScrollIndicator={false}
+>
+
         {/* ─── TAB 1: Live Queue Tracker ─── */}
         {activeTab === "queue" && (
           <View style={styles.tabContent}>
@@ -680,10 +656,52 @@ export function PatientPortal() {
             })}
           </View>
         )}
-      </ScrollView>
+</ScrollView>
 
-      {/* ─── MODAL 1: Join Queue ─── */}
-      <Modal visible={showJoinQueueModal} transparent animationType="slide">
+{/* ─── FIXED BOTTOM NAVIGATION ─── */}
+<View
+  style={[
+    styles.bottomNav,
+    { paddingBottom: Math.max(insets.bottom, 8) }
+  ]}
+>
+  {(
+    [
+      { id: "queue", label: "Live Queue", icon: "confirmation-number" },
+      { id: "records", label: "Health Records", icon: "badge" },
+      { id: "appointments", label: "Appointments", icon: "event" },
+      { id: "medicines", label: "Medicine Stock", icon: "medication" },
+    ] as const
+  ).map((tab) => {
+    const active = activeTab === tab.id;
+
+    return (
+      <Pressable
+        key={tab.id}
+        onPress={() => setActiveTab(tab.id)}
+        style={styles.bottomNavItem}
+      >
+        <MaterialIcons
+          name={tab.icon}
+          size={22}
+          color={active ? "#087E7B" : "#6C817C"}
+        />
+
+        <Text
+          style={[
+            styles.bottomNavText,
+            active && styles.bottomNavTextActive,
+          ]}
+        >
+          {tab.label}
+        </Text>
+      </Pressable>
+    );
+  })}
+</View>
+
+{/* ─── MODAL 1: Join Queue ─── */}
+<Modal visible={showJoinQueueModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
@@ -931,6 +949,54 @@ export function PatientPortal() {
 }
 
 const styles = StyleSheet.create({
+  bottomNav: {
+  position: "absolute",
+  left: 0,
+  right: 0,
+  bottom: 0,
+
+  minHeight: 72,
+
+  backgroundColor: "#FFFFFF",
+
+  borderTopWidth: 1,
+  borderTopColor: "#D5E1DD",
+
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "space-around",
+
+  paddingHorizontal: 8,
+
+  ...Platform.select({
+    web: {
+      boxShadow: "0 -2px 8px rgba(0,0,0,0.08)",
+    } as any,
+    default: {
+      elevation: 8,
+    },
+  }),
+},
+
+bottomNavItem: {
+  flex: 1,
+  alignItems: "center",
+  justifyContent: "center",
+  paddingVertical: 8,
+  gap: 3,
+},
+
+bottomNavText: {
+  fontSize: 10,
+  fontWeight: "700",
+  color: "#6C817C",
+  textAlign: "center",
+},
+
+bottomNavTextActive: {
+  color: "#087E7B",
+  fontWeight: "900",
+},
   container: {
     flex: 1,
     backgroundColor: "#F4F8F6",
