@@ -44,18 +44,24 @@ function isDatabaseReachable(): boolean {
 
 const hasDatabase = isDatabaseReachable();
 
+export function getDatabaseConfig() {
+  return {
+    type: "postgres" as const,
+    url: process.env.DATABASE_URL,
+    entities,
+    migrations: ["dist/server/database/migrations/*.js"],
+    migrationsRun: true,
+    synchronize: false,
+    logging: process.env.NODE_ENV !== "production",
+    ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
+  };
+}
+
 @Module({
   imports: hasDatabase
     ? [
         TypeOrmModule.forRootAsync({
-          useFactory: () => ({
-            type: "postgres" as const,
-            url: process.env.DATABASE_URL,
-            entities,
-            synchronize: process.env.NODE_ENV !== "production",
-            logging: process.env.NODE_ENV !== "production",
-            ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
-          }),
+          useFactory: () => getDatabaseConfig(),
         }),
         TypeOrmModule.forFeature(entities),
       ]

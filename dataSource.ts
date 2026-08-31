@@ -25,7 +25,8 @@ export default new DataSource({
     TriageResult,
     ChatMessage,
   ],
-  migrations: ["./server/database/migrations/*.ts"],
+  migrations: ["dist/server/database/migrations/*.js"],
+  migrationsRun: true,
   synchronize: false,
   logging: process.env.NODE_ENV !== "production",
 });
