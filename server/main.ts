@@ -6,24 +6,18 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { AppModule } from "./app.module";
 import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
+import { buildCorsConfig } from "./_core/cors";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Reflect the request origin so credentialed (cookie-based) cross-origin
-  // calls from the Expo web app (e.g. http://localhost:8081) work against this
-  // API on :3000. "Access-Control-Allow-Origin: *" is rejected by browsers
-  // when credentials are included.
-  const corsOrigin = process.env.CORS_ORIGIN;
-  app.enableCors({
-    origin:
-      corsOrigin && corsOrigin !== "*"
-        ? corsOrigin.split(",").map((origin) => origin.trim())
-        : (origin: string | undefined, callback: (err: Error | null, allow?: unknown) => void) =>
-            callback(null, origin),
-    methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
-    credentials: true,
-  });
+  const rawAllowedOrigins = process.env.CORS_ORIGIN ?? [
+    "https://healthcare-qu79.vercel.app",
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+  ].join(",");
+
+  app.enableCors(buildCorsConfig(rawAllowedOrigins));
 
   app.useGlobalPipes(
     new ValidationPipe({
