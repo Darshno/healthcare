@@ -18,11 +18,14 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarStyle: {
+  screenOptions={{
+    tabBarActiveTintColor: colors.tint,
+    headerShown: false,
+    tabBarButton: HapticTab,
+
+    tabBarStyle: isPatient
+      ? { display: "none" }
+      : {
           paddingTop: 8,
           paddingBottom: bottomPadding,
           height: tabBarHeight,
@@ -30,15 +33,18 @@ export default function TabLayout() {
           borderTopColor: colors.border,
           borderTopWidth: 0.5,
         },
-      }}
-    >
+  }}
+>
       <Tabs.Screen
-        name="index"
-        options={{
-          title: isPatient ? "Patient Portal" : "Operations",
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name={isPatient ? "heart.text.square.fill" : "house.fill"} color={color} />,
-        }}
-      />
+  name="patients"
+  options={{
+    title: "Patients",
+    href: isPatient ? null : undefined,
+    tabBarIcon: ({ color }) => (
+      <IconSymbol size={26} name="person.2.fill" color={color} />
+    ),
+  }}
+/>
       <Tabs.Screen name="queue" options={{ title: isPatient ? "Live Queue" : "Queue", tabBarIcon: ({ color }) => <IconSymbol size={26} name="list.bullet" color={color} /> }} />
       <Tabs.Screen
         name="patients"
