@@ -125,7 +125,7 @@ export class ChatController {
             senderInitials: msg.senderInitials,
             text: msg.text,
             tag: msg.tag,
-            sentAt: msg.sentAt.getTime(),
+            sentAt: msg.sentAt instanceof Date ? msg.sentAt.getTime() : new Date(msg.sentAt).getTime(),
           });
         }
       }

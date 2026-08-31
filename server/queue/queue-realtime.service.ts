@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { EventEmitter } from "events";
+import { execSync } from "child_process";
 
 export type QueueEvent =
   | { type: "enqueue"; facilityId: number; patientId: number; at: number }
@@ -9,6 +10,22 @@ export type QueueEvent =
   | { type: "pause"; facilityId: number; patientId: number; at: number };
 
 const CHANNEL_PREFIX = "queue:events:";
+
+function isRedisReachable(): boolean {
+  if (!process.env.REDIS_URL) return false;
+  try {
+    const url = new URL(process.env.REDIS_URL);
+    const port = parseInt(url.port || "6379", 10);
+    const host = url.hostname || "localhost";
+    execSync(
+      `node -e "require('net').createConnection(${port},'${host}').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"`,
+      { timeout: 2000, stdio: "pipe" },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Lightweight real-time bus for queue state changes.
@@ -28,14 +45,24 @@ export class QueueRealtimeService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const redisUrl = process.env.REDIS_URL;
-    if (!redisUrl) {
-      this.logger.log("QueueRealtimeService: no Redis — using in-process event bus");
+    if (!redisUrl || !isRedisReachable()) {
+      this.logger.log("QueueRealtimeService: no reachable Redis — using in-process event bus");
       return;
     }
     try {
       const Redis = (await import("ioredis")).default;
-      this.publisher = new Redis(redisUrl);
-      this.subscriber = new Redis(redisUrl);
+      const opts = {
+        maxRetriesPerRequest: 1,
+        retryStrategy: () => null,
+      };
+      this.publisher = new Redis(redisUrl, opts);
+      this.subscriber = new Redis(redisUrl, opts);
+      this.publisher.on("error", (err: Error) => {
+        this.logger.warn(`QueueRealtimeService publisher error: ${err.message}`);
+      });
+      this.subscriber.on("error", (err: Error) => {
+        this.logger.warn(`QueueRealtimeService subscriber error: ${err.message}`);
+      });
       this.logger.log("QueueRealtimeService: Redis pub/sub active");
     } catch (error) {
       this.logger.warn(`QueueRealtimeService: Redis unavailable (${error instanceof Error ? error.message : error}) — using in-process event bus`);

@@ -104,7 +104,7 @@ function MessageBubble({ msg, isMine }: { msg: Message; isMine: boolean }) {
           <Text style={[styles.timeText, isMine && styles.timeTextMine]}>
             {formatTime(msg.timestamp)}
           </Text>
-          {isMine && <Text style={styles.checkmark}> ✓✓</Text>}
+          {isMine && <Text style={styles.checkmark}> </Text>}
         </View>
       </View>
       {isMine && (
@@ -309,11 +309,18 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingBottom: 12,
-    elevation: 2,
-    shadowColor: "#18332F",
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    ...Platform.select({
+      web: {
+        boxShadow: "0 2px 6px rgba(24, 51, 47, 0.06)",
+      } as any,
+      default: {
+        elevation: 2,
+        shadowColor: "#18332F",
+        shadowOpacity: 0.06,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 2 },
+      },
+    }),
   },
   headerLeft: {
     flexDirection: "row",
@@ -446,16 +453,24 @@ const styles = StyleSheet.create({
     maxWidth: "78%",
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
+    borderBottomLeftLeftRadius: undefined,
     borderBottomLeftRadius: 4,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: "#E4EDE9",
-    shadowColor: "#18332F",
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    ...Platform.select({
+      web: {
+        boxShadow: "0 1px 4px rgba(24, 51, 47, 0.04)",
+      } as any,
+      default: {
+        shadowColor: "#18332F",
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 1 },
+        elevation: 1,
+      },
+    }),
   },
   bubbleMine: {
     backgroundColor: "#087E7B",
@@ -605,10 +620,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-    shadowColor: "#087E7B",
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: "0 3px 6px rgba(8, 126, 123, 0.3)",
+      } as any,
+      default: {
+        shadowColor: "#087E7B",
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 3,
+      },
+    }),
   },
 });

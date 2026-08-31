@@ -29,6 +29,9 @@ export type Patient = {
   age: number;
   sex: "female" | "male" | "other";
   contact?: string;
+  abhaId?: string;
+  address?: string;
+  bloodGroup?: string;
   careTags: CareTag[];
   allergies: string[];
   currentMedicines: string[];
@@ -45,6 +48,9 @@ export type QueueEntry = {
   priorityReason: PriorityReason;
   status: QueueStatus;
   overrideReason?: string;
+  tokenNumber?: number;
+  roomNumber?: string;
+  doctorName?: string;
   syncState: SyncState;
 };
 
@@ -52,6 +58,9 @@ export type Encounter = {
   id: string;
   patientId: string;
   type: "triage" | "consultation" | "followUp";
+  doctorName?: string;
+  diagnosis?: string;
+  prescriptions?: string[];
   note: string;
   createdAt: number;
   syncState: SyncState;
@@ -73,10 +82,13 @@ export type Medicine = {
   id: string;
   name: string;
   localName: string;
+  category?: "antibiotic" | "analgesic" | "maternal" | "chronic" | "pediatric" | "general";
   unit: string;
   stock: number;
   minimumStock: number;
   expiryDays: number;
+  isGovtSupply?: boolean;
+  pricePerUnit?: number;
   lastSyncedAt: number;
   syncState: SyncState;
 };
@@ -99,6 +111,88 @@ export type OfflineOperation = {
 
 export type PriorityInput = TriageFlagInput;
 
+// ─── Hospitals & Doctor Directory Types ────────────────────────────────────────
+
+export type HospitalDoctor = {
+  id: string;
+  name: string;
+  qualification: string;
+  specialization: string;
+  experience: string;
+  opdTimings: string;
+  availableDays: string[];
+  isAvailableToday: boolean;
+  phone?: string;
+  rating?: number;
+};
+
+export type HospitalFacility = {
+  id: string;
+  name: string;
+  type: "PHC (Primary Health Centre)" | "CHC (Community Health Centre)" | "District Civil Hospital" | "Sub-Centre";
+  address: string;
+  distanceKm: number;
+  phone: string;
+  emergencyHotline: string;
+  ambulanceAvailable: boolean;
+  totalBeds: number;
+  availableBeds: number;
+  icuBedsAvailable: number;
+  facilities: string[];
+  doctors: HospitalDoctor[];
+};
+
+// ─── Appointment Types ─────────────────────────────────────────────────────────
+
+export type AppointmentStatus = "scheduled" | "confirmed" | "completed" | "cancelled" | "emergency_dispatched";
+
+export type Appointment = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientPhone?: string;
+  facilityId: string;
+  facilityName: string;
+  doctorId: string;
+  doctorName: string;
+  specialty: string;
+  date: string;
+  timeSlot: string;
+  reason: string;
+  isEmergency: boolean;
+  emergencySeverity?: "critical" | "severe" | "moderate";
+  status: AppointmentStatus;
+  createdAt: number;
+  notes?: string;
+};
+
+// ─── Medicine Order Types ──────────────────────────────────────────────────────
+
+export type MedicineOrderStatus = "pending" | "approved" | "ready_for_pickup" | "dispensed" | "cancelled";
+
+export type MedicineOrderItem = {
+  medicineId: string;
+  medicineName: string;
+  quantity: number;
+  unit: string;
+};
+
+export type MedicineOrder = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientPhone?: string;
+  facilityName: string;
+  items: MedicineOrderItem[];
+  fulfillmentType: "pickup_phc" | "asha_home_delivery";
+  status: MedicineOrderStatus;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+// ─── Master State ─────────────────────────────────────────────────────────────
+
 export type HealthState = {
   language: AppLanguage;
   patients: Patient[];
@@ -108,5 +202,9 @@ export type HealthState = {
   medicines: Medicine[];
   inventoryTransactions: InventoryTransaction[];
   operations: OfflineOperation[];
+  hospitals: HospitalFacility[];
+  appointments: Appointment[];
+  medicineOrders: MedicineOrder[];
   lastSyncedAt: number;
 };
+

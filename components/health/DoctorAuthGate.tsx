@@ -1,10 +1,10 @@
 import React from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { useDoctorAuth } from "@/lib/health/DoctorAuthContext";
-import { DoctorAuthScreen } from "./DoctorAuthScreen";
+import { useUserAuth } from "@/lib/health/DoctorAuthContext";
+import { AuthScreen } from "./AuthScreen";
 
 export function DoctorAuthGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isAuthReady } = useDoctorAuth();
+  const { isAuthenticated, isAuthReady } = useUserAuth();
 
   if (!isAuthReady) {
     return (
@@ -15,7 +15,7 @@ export function DoctorAuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    return <DoctorAuthScreen />;
+    return <AuthScreen />;
   }
 
   return <>{children}</>;
@@ -29,3 +29,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
+

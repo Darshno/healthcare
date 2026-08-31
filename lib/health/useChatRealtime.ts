@@ -231,14 +231,14 @@ export function useChatRealtime(channel = "clinical-staff") {
       if (cancelled) return;
       setConnectionState("reconnecting");
       attempt += 1;
-      retryTimer = window.setTimeout(connect, Math.min(1000 * 2 ** Math.min(attempt - 1, 4), 15000));
+      retryTimer = setTimeout(connect, Math.min(1000 * 2 ** Math.min(attempt - 1, 4), 15000)) as unknown as number;
     };
 
     void connect();
 
     return () => {
       cancelled = true;
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      if (retryTimer !== null) clearTimeout(retryTimer);
       controller?.abort();
     };
   }, [apply]);

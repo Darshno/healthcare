@@ -83,7 +83,8 @@ const redisConfig = hasRedis ? parseRedisUrl(process.env.REDIS_URL!) : null;
     RedisModule,
     ...(hasDb ? [TypeOrmModule.forFeature([TriageResult])] : []),
     ...(hasRedis ? [BullModule.forRoot({ redis: redisConfig! }), QueueModule] : []),
-    ...(hasDb ? [AuthModule, FacilityModule, PatientModule, TeleconsultModule, FhirModule, HealthIdModule, ChatModule] : []),
+    ChatModule,
+    ...(hasDb ? [AuthModule, FacilityModule, PatientModule, TeleconsultModule, FhirModule, HealthIdModule] : []),
   ],
   controllers: [
     HealthController,

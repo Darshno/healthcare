@@ -4,11 +4,17 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { PrimaryButton, PriorityBadge, SectionHeader, SyncPill, commonStyles } from "@/components/health/ui";
 import { useHealth } from "@/lib/health/store";
 import { sortQueue } from "@/lib/health/workflows";
-import { useDoctorAuth } from "@/lib/health/DoctorAuthContext";
+import { useUserAuth } from "@/lib/health/DoctorAuthContext";
+import { PatientPortal } from "@/components/health/PatientPortal";
 
 export default function OperationsHome() {
   const { state, t, syncNow, syncing, syncError, setLanguage, priorityReasonLabel } = useHealth();
-  const { doctor, signOut } = useDoctorAuth();
+  const { user, role, doctor, healthWorker, signOut } = useUserAuth();
+
+  // If active user is a Patient, render the dedicated Patient Portal interface
+  if (role === "patient") {
+    return <PatientPortal />;
+  }
 
   const handleSignOut = () => {
     signOut();
@@ -21,9 +27,13 @@ export default function OperationsHome() {
   const nextPatient = activeQueue[0];
   const nextPatientRecord = nextPatient ? state.patients.find((patient) => patient.id === nextPatient.patientId) : undefined;
 
-  const doctorInitials = doctor?.name
-    ? doctor.name.replace("Dr. ", "").trim().slice(0, 2).toUpperCase()
-    : "DR";
+  const userInitials = user?.name
+    ? user.name.replace(/^Dr\.\s*/i, "").trim().slice(0, 2).toUpperCase()
+    : "HC";
+
+  const roleTitle = role === "doctor" ? "Doctor / Medical Officer" : "Health Helper / ASHA";
+  const roleColor = role === "doctor" ? "#087E7B" : "#B66A00";
+  const roleBg = role === "doctor" ? "#E6F5F3" : "#FFF4E5";
 
   return (
     <View style={commonStyles.screen}>
@@ -31,7 +41,7 @@ export default function OperationsHome() {
         {/* Top Header */}
         <View style={styles.topBar}>
           <View>
-            <Text style={commonStyles.eyebrow}>{doctor?.facilityName || "Nandipur Primary Health Centre"}</Text>
+            <Text style={commonStyles.eyebrow}>{user?.facilityName || "Nandipur Primary Health Centre"}</Text>
             <Text style={commonStyles.title}>{t("operations")}</Text>
           </View>
           <Pressable
@@ -43,25 +53,30 @@ export default function OperationsHome() {
           </Pressable>
         </View>
 
-        {/* Doctor Active Profile Banner */}
-        {doctor && (
+        {/* Multi-Role Active Profile Banner */}
+        {user && (
           <View style={styles.profileCard}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{doctorInitials}</Text>
+            <View style={[styles.avatar, { backgroundColor: roleColor }]}>
+              <Text style={styles.avatarText}>{userInitials}</Text>
             </View>
             <View style={styles.flex}>
               <View style={styles.doctorNameRow}>
-                <Text style={styles.profileTitle}>{doctor.name}</Text>
-                <View style={styles.activeBadge}>
-                  <View style={styles.activeDot} />
-                  <Text style={styles.activeBadgeText}>Active</Text>
+                <Text style={styles.profileTitle}>{user.name}</Text>
+                <View style={[styles.activeBadge, { backgroundColor: roleBg }]}>
+                  <View style={[styles.activeDot, { backgroundColor: roleColor }]} />
+                  <Text style={[styles.activeBadgeText, { color: roleColor }]}>{roleTitle}</Text>
                 </View>
               </View>
-              <Text style={styles.profileText}>{doctor.specialization} · {doctor.doctorId}</Text>
+              <Text style={styles.profileText}>
+                {role === "doctor"
+                  ? `${doctor?.specialization || "Medical Officer"} · ID: ${doctor?.doctorId || "DOC"}`
+                  : `${healthWorker?.designation || "ASHA Worker"} · ${healthWorker?.assignedVillage || "Village Sector"}`}
+              </Text>
             </View>
             <Pressable
               onPress={handleSignOut}
               style={({ pressed }) => [styles.signoutButton, { opacity: pressed ? 0.65 : 1 }]}
+              accessibilityLabel="Sign out / Switch role"
             >
               <MaterialIcons name="logout" size={16} color="#B42318" />
               <Text style={styles.signoutText}>{t("signOut")}</Text>

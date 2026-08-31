@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { EventEmitter } from "events";
+import { execSync } from "child_process";
 
 export interface ChatMessagePayload {
   id: number;
@@ -14,6 +15,22 @@ export interface ChatMessagePayload {
 }
 
 const CHANNEL_PREFIX = "chat:messages:";
+
+function isRedisReachable(): boolean {
+  if (!process.env.REDIS_URL) return false;
+  try {
+    const url = new URL(process.env.REDIS_URL);
+    const port = parseInt(url.port || "6379", 10);
+    const host = url.hostname || "localhost";
+    execSync(
+      `node -e "require('net').createConnection(${port},'${host}').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"`,
+      { timeout: 2000, stdio: "pipe" },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Real-time bus for chat messages.
@@ -32,14 +49,24 @@ export class ChatRealtimeService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const redisUrl = process.env.REDIS_URL;
-    if (!redisUrl) {
-      this.logger.log("ChatRealtimeService: no Redis — using in-process event bus");
+    if (!redisUrl || !isRedisReachable()) {
+      this.logger.log("ChatRealtimeService: no reachable Redis — using in-process event bus");
       return;
     }
     try {
       const Redis = (await import("ioredis")).default;
-      this.publisher = new Redis(redisUrl);
-      this.subscriber = new Redis(redisUrl);
+      const opts = {
+        maxRetriesPerRequest: 1,
+        retryStrategy: () => null, // don't retry endlessly if dropped
+      };
+      this.publisher = new Redis(redisUrl, opts);
+      this.subscriber = new Redis(redisUrl, opts);
+      this.publisher.on("error", (err: Error) => {
+        this.logger.warn(`ChatRealtimeService publisher error: ${err.message}`);
+      });
+      this.subscriber.on("error", (err: Error) => {
+        this.logger.warn(`ChatRealtimeService subscriber error: ${err.message}`);
+      });
       this.logger.log("ChatRealtimeService: Redis pub/sub active");
     } catch (error) {
       this.logger.warn(`ChatRealtimeService: Redis unavailable (${error instanceof Error ? error.message : error}) — using in-process event bus`);

@@ -252,7 +252,7 @@ export function DoctorAuthScreen() {
             </View>
 
             <View style={styles.presetList}>
-              {registeredDoctors.slice(0, 3).map((doc) => (
+              {registeredDoctors.slice(0, 3).map((doc: any) => (
                 <Pressable
                   key={doc.id}
                   onPress={() => handleQuickSelect(doc)}
