@@ -30,6 +30,7 @@ export type Patient = {
   age: number;
   sex: "female" | "male" | "other";
   contact?: string;
+  disease?: string;
   abhaId?: string;
   address?: string;
   bloodGroup?: string;
@@ -240,12 +241,13 @@ export type BedOccupancy = {
   syncState: SyncState;
 };
 
-export type UserRole = "ASHA_WORKER" | "DOCTOR" | "CHIEF_DOCTOR" | "RECEPTIONIST";
+export type UserRole = "chief_doctor" | "doctor" | "asha_worker" | "receptionist";
 
 export type CurrentUser = {
   id: string;
   name: string;
   facilityId: string;
+  facilityName: string;
   role: UserRole;
   specialty?: string;
 };
