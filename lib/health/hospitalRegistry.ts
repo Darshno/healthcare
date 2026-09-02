@@ -14,8 +14,16 @@ export type HospitalRecord = {
   createdAt: number;
 };
 
-// Bumped to v3 to discard old data alongside the user registry reset
 const HOSPITAL_REGISTRY_KEY = "rural-health-access.hospitals.v3";
+
+export const DEFAULT_HOSPITALS: HospitalRecord[] = [
+  {
+    id: "hosp-nandipur-01",
+    name: "Nandipur Primary Health Centre",
+    chiefDoctorId: "doc-chief-01",
+    createdAt: 1700000000000,
+  },
+];
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Read helpers
@@ -24,10 +32,18 @@ const HOSPITAL_REGISTRY_KEY = "rural-health-access.hospitals.v3";
 export async function getHospitals(): Promise<HospitalRecord[]> {
   try {
     const raw = await AsyncStorage.getItem(HOSPITAL_REGISTRY_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as HospitalRecord[];
+    if (!raw) {
+      await AsyncStorage.setItem(HOSPITAL_REGISTRY_KEY, JSON.stringify(DEFAULT_HOSPITALS));
+      return DEFAULT_HOSPITALS;
+    }
+    const list = JSON.parse(raw) as HospitalRecord[];
+    if (!Array.isArray(list) || list.length === 0) {
+      await AsyncStorage.setItem(HOSPITAL_REGISTRY_KEY, JSON.stringify(DEFAULT_HOSPITALS));
+      return DEFAULT_HOSPITALS;
+    }
+    return list;
   } catch {
-    return [];
+    return DEFAULT_HOSPITALS;
   }
 }
 
@@ -58,12 +74,13 @@ export async function registerHospital(
     (h) => h.name.trim().toLowerCase() === name.trim().toLowerCase(),
   );
   if (exists) {
-    throw new Error(`A hospital named "${name}" is already registered.`);
+    return exists;
   }
 
+  const updated = [hospital, ...all];
   await AsyncStorage.setItem(
     HOSPITAL_REGISTRY_KEY,
-    JSON.stringify([hospital, ...all]),
+    JSON.stringify(updated),
   );
   return hospital;
 }

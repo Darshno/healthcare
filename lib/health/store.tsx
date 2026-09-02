@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
+import { Alert } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { priorityLabel, priorityReasonLabel, referralLabel, syncLabel, translate, type TranslationKey } from "./i18n";
 import { serializeOperation, type SyncTransport } from "./sync";
@@ -7,11 +8,14 @@ import type {
   AppLanguage,
   Appointment,
   AppointmentStatus,
+  Bed,
+  BedOccupancy,
   CareTag,
   CurrentUser,
   Encounter,
   HealthState,
   HospitalFacility,
+  HospitalUnit,
   InventoryTransactionType,
   Medicine,
   MedicineOrder,
@@ -90,6 +94,7 @@ type OrderMedicineInput = {
   patientId: string;
   patientName: string;
   patientPhone?: string;
+  facilityId?: string;
   facilityName: string;
   items: MedicineOrderItem[];
   fulfillmentType: "pickup_phc" | "asha_home_delivery";
@@ -171,10 +176,11 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       .then((saved) => {
         if (saved) {
           const parsed = JSON.parse(saved) as HealthState;
-          setState({
+          setState((previous) => ({
             ...EMPTY_STATE,
             ...parsed,
-          });
+            currentUser: previous.currentUser ?? parsed.currentUser ?? null,
+          }));
         }
       })
       .catch(() => undefined)
@@ -510,6 +516,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
 
     const emergencyQueue: QueueEntry = {
       id: queueId,
+      facilityId: input.facilityId || state.currentUser?.facilityId || "hosp-default",
       patientId: input.patientId,
       service: "🚨 EMERGENCY SOS TRIAGE",
       arrivedAt: nowTs,
@@ -540,6 +547,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
 
     const order: MedicineOrder = {
       id: orderId,
+      facilityId: input.facilityId || state.currentUser?.facilityId || "hosp-default",
       patientId: input.patientId,
       patientName: input.patientName,
       patientPhone: input.patientPhone,

@@ -15,29 +15,23 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 
 import {
-  createDoctorProfile,
-  authenticateDoctor,
-  PRESET_DOCTORS,
-  PRESET_DEFAULT_PIN,
-} from "../lib/health/doctorAuth";
+  createUserProfile,
+  authenticateUser,
+  type DoctorProfile,
+} from "../lib/health/userAuth";
 
 describe("Doctor Authentication & Profile Creation", () => {
-  it("includes default verified preset doctors", () => {
-    expect(PRESET_DOCTORS.length).toBeGreaterThanOrEqual(3);
-    const asha = PRESET_DOCTORS.find((d) => d.name.includes("Asha"));
-    expect(asha).toBeDefined();
-    expect(asha?.specialization).toContain("Community Medicine");
-    expect(asha?.doctorId).toBe("MCI-48201");
-  });
-
   it("creates a doctor profile with formatted prefix and details", async () => {
-    const profile = await createDoctorProfile({
+    const profile = (await createUserProfile({
       name: "Sunita Patel",
+      role: "doctor",
       doctorId: "MCI-99881",
       specialization: "Pediatrics / Child Health",
       facilityName: "Nandipur PHC",
+      facilityId: "hosp-1",
       phone: "9876543210",
-    });
+      passcode: "1234",
+    })) as DoctorProfile;
 
     expect(profile.name).toBe("Dr. Sunita Patel");
     expect(profile.doctorId).toBe("MCI-99881");
@@ -47,20 +41,20 @@ describe("Doctor Authentication & Profile Creation", () => {
   });
 
   it("authenticates existing doctor by MCI ID with correct PIN", async () => {
-    const doctor = await authenticateDoctor("MCI-48201", PRESET_DEFAULT_PIN);
+    const doctor = await authenticateUser("MCI-99881", "1234", "doctor");
     expect(doctor).toBeDefined();
-    expect(doctor.name).toBe("Dr. Asha Verma");
+    expect(doctor.name).toBe("Dr. Sunita Patel");
   });
 
-  it("rejects login with wrong password", async () => {
-    await expect(authenticateDoctor("MCI-48201", "9999")).rejects.toThrow(
-      "Incorrect password or PIN",
+  it("rejects login with wrong passcode", async () => {
+    await expect(authenticateUser("MCI-99881", "9999", "doctor")).rejects.toThrow(
+      "Incorrect PIN",
     );
   });
 
-  it("throws when doctor ID is not found", async () => {
-    await expect(authenticateDoctor("MCI-000000", "1234")).rejects.toThrow(
-      "No doctor found",
+  it("throws when user is not found", async () => {
+    await expect(authenticateUser("MCI-000000", "1234", "doctor")).rejects.toThrow(
+      "No user found",
     );
   });
 });

@@ -2,8 +2,7 @@ import "dotenv/config";
 import "reflect-metadata";
 import { DataSource } from "typeorm";
 import { User } from "./server/database/entities/user.entity";
-import { Facility } from "./server/database/entities/facility.entity";
-import { FacilityMembership } from "./server/database/entities/facility-membership.entity";
+import { Hospital } from "./server/database/entities/hospital.entity";
 import { SyncOperation } from "./server/database/entities/sync-operation.entity";
 import { Patient } from "./server/database/entities/patient.entity";
 import { QueueEntry } from "./server/database/entities/queue-entry.entity";
@@ -16,8 +15,7 @@ export default new DataSource({
   url: process.env.DATABASE_URL,
   entities: [
     User,
-    Facility,
-    FacilityMembership,
+    Hospital,
     SyncOperation,
     Patient,
     QueueEntry,

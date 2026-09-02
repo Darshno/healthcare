@@ -102,19 +102,19 @@ export function AuthScreen() {
     try {
       const list = await getHospitals();
       setHospitals(list);
-      if (list.length > 0 && !selectedHospitalId) {
-        setSelectedHospitalId(list[0].id);
+      if (list.length > 0) {
+        setSelectedHospitalId((prev) => (prev && list.some((h) => h.id === prev)) ? prev : list[0].id);
       }
     } catch {
       setHospitals([]);
     } finally {
       setHospitalsLoading(false);
     }
-  }, [selectedHospitalId]);
+  }, []);
 
   useEffect(() => {
     void refreshHospitals();
-  }, []);
+  }, [refreshHospitals]);
 
   const resetForm = () => {
     setName("");
@@ -233,9 +233,10 @@ export function AuthScreen() {
                 key={role.id}
                 onPress={() => {
                   setActiveRole(role.id as UserRole);
+                  setSignInRole(role.id as UserRole);
                   setError(null);
                   resetForm();
-                  if (role.id !== "chief_doctor") void refreshHospitals();
+                  void refreshHospitals();
                 }}
                 style={[styles.roleCard, active && { borderColor: role.color, borderWidth: 2, backgroundColor: role.bg }]}
               >
@@ -254,7 +255,11 @@ export function AuthScreen() {
           {(["signin", "signup"] as const).map((m) => (
             <Pressable
               key={m}
-              onPress={() => { setMode(m); setError(null); }}
+              onPress={() => {
+                setMode(m);
+                setError(null);
+                void refreshHospitals();
+              }}
               style={[styles.modeTab, mode === m && { backgroundColor: currentRoleMeta.color }]}
             >
               <MaterialIcons
@@ -280,29 +285,26 @@ export function AuthScreen() {
         {/* ─── SIGN IN ─── */}
         {mode === "signin" && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Sign In</Text>
+            <Text style={styles.cardTitle}>Sign In as {currentRoleMeta.label}</Text>
 
-            {/* Role picker for sign in */}
-            <Text style={styles.inputLabel}>Sign in as</Text>
-            <View style={styles.inlineRoles}>
-              {ROLES.map((r) => (
-                <Pressable
-                  key={r.id}
-                  onPress={() => setSignInRole(r.id as UserRole)}
-                  style={[styles.inlineRoleBtn, signInRole === r.id && { backgroundColor: r.bg, borderColor: r.color, borderWidth: 2 }]}
-                >
-                  <Text style={[styles.inlineRoleBtnText, signInRole === r.id && { color: r.color, fontWeight: "800" }]}>
-                    {r.label}
+            {/* Hospital Facility preview */}
+            {hospitals.length > 0 && (
+              <View style={styles.facilityBanner}>
+                <MaterialIcons name="local-hospital" size={18} color="#087E7B" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.facilityBannerLabel}>Hospital Facility</Text>
+                  <Text style={styles.facilityBannerName}>
+                    {hospitals.find((h) => h.id === selectedHospitalId)?.name || hospitals[0]?.name}
                   </Text>
-                </Pressable>
-              ))}
-            </View>
+                </View>
+              </View>
+            )}
 
             <Text style={styles.inputLabel}>Name, Phone, or ID</Text>
             <TextInput
               value={signInIdentifier}
               onChangeText={setSignInIdentifier}
-              placeholder="e.g. Dr. Priya Sharma or 9876543210"
+              placeholder={activeRole === "chief_doctor" || activeRole === "doctor" ? "e.g. Dr. Priya Sharma or DOC-1234" : "e.g. Sunita Devi or 9876543210"}
               placeholderTextColor="#8CA19B"
               style={styles.input}
               autoCapitalize="none"
@@ -371,39 +373,49 @@ export function AuthScreen() {
             {/* ── Staff: pick hospital ── */}
             {isStaff && (
               <>
-                <Text style={styles.cardSectionTitle}>Select Your Hospital</Text>
+                <Text style={styles.cardSectionTitle}>🏥 Select Hospital Facility</Text>
                 {hospitalsLoading ? (
                   <ActivityIndicator color="#087E7B" style={{ marginVertical: 12 }} />
-                ) : noHospitalsWarning ? (
+                ) : hospitals.length === 0 ? (
                   <View style={styles.warningBox}>
                     <MaterialIcons name="warning" size={20} color="#9A5B00" />
                     <Text style={styles.warningText}>
-                      No hospital has been registered yet.{"\n"}
-                      Please ask your Chief Doctor to register the hospital first, then come back.
+                      No hospital registered yet. Please ask your Chief Doctor to register the hospital first.
                     </Text>
                   </View>
                 ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hospitalScroll}>
-                    {hospitals.map((h) => (
-                      <Pressable
-                        key={h.id}
-                        onPress={() => setSelectedHospitalId(h.id)}
-                        style={[
-                          styles.hospitalChip,
-                          selectedHospitalId === h.id && { backgroundColor: "#E6F5F3", borderColor: "#087E7B", borderWidth: 2 },
-                        ]}
-                      >
-                        <MaterialIcons
-                          name="local-hospital"
-                          size={14}
-                          color={selectedHospitalId === h.id ? "#087E7B" : "#6C817C"}
-                        />
-                        <Text style={[styles.hospitalChipText, selectedHospitalId === h.id && { color: "#087E7B", fontWeight: "800" }]}>
-                          {h.name}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
+                  <View style={styles.hospitalListContainer}>
+                    {hospitals.map((h) => {
+                      const isSelected = selectedHospitalId === h.id || (!selectedHospitalId && hospitals[0]?.id === h.id);
+                      return (
+                        <Pressable
+                          key={h.id}
+                          onPress={() => setSelectedHospitalId(h.id)}
+                          style={[
+                            styles.hospitalCardItem,
+                            isSelected && styles.hospitalCardItemSelected,
+                          ]}
+                        >
+                          <MaterialIcons
+                            name="local-hospital"
+                            size={18}
+                            color={isSelected ? "#087E7B" : "#6C817C"}
+                          />
+                          <Text
+                            style={[
+                              styles.hospitalCardItemText,
+                              isSelected && styles.hospitalCardItemTextSelected,
+                            ]}
+                          >
+                            {h.name}
+                          </Text>
+                          {isSelected && (
+                            <MaterialIcons name="check-circle" size={18} color="#087E7B" style={{ marginLeft: "auto" }} />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 )}
               </>
             )}
@@ -544,6 +556,24 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF4E5", borderRadius: 12, padding: 14, marginVertical: 6,
   },
   warningText: { color: "#9A5B00", fontSize: 13, fontWeight: "700", flex: 1, lineHeight: 19 },
+  facilityBanner: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "#E6F5F3", borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: "#B2DFDB", marginBottom: 10,
+  },
+  facilityBannerLabel: { color: "#087E7B", fontSize: 11, fontWeight: "700", textTransform: "uppercase" },
+  facilityBannerName: { color: "#18332F", fontSize: 14, fontWeight: "800", marginTop: 2 },
+  hospitalListContainer: { gap: 8, marginVertical: 6 },
+  hospitalCardItem: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "#F7FAF9", borderRadius: 12, borderWidth: 1.5,
+    borderColor: "#D5E1DD", paddingHorizontal: 14, paddingVertical: 12,
+  },
+  hospitalCardItemSelected: {
+    backgroundColor: "#E6F5F3", borderColor: "#087E7B",
+  },
+  hospitalCardItemText: { color: "#4A6560", fontSize: 14, fontWeight: "700", flex: 1 },
+  hospitalCardItemTextSelected: { color: "#087E7B", fontWeight: "900" },
   hospitalScroll: { marginBottom: 4 },
   hospitalChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
