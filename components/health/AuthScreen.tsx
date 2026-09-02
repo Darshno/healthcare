@@ -112,9 +112,16 @@ export function AuthScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    void refreshHospitals();
-  }, [refreshHospitals]);
+  // ── Hospital Dropdown State ──
+  const [showHospitalDropdown, setShowHospitalDropdown] = useState(false);
+  const [hospitalSearch, setHospitalSearch] = useState("");
+  const [chiefHospitalMode, setChiefHospitalMode] = useState<"new" | "existing">("new");
+
+  const filteredHospitals = hospitals.filter((h) =>
+    h.name.toLowerCase().includes(hospitalSearch.toLowerCase().trim()),
+  );
+
+  const selectedHospital = hospitals.find((h) => h.id === selectedHospitalId) || hospitals[0];
 
   const resetForm = () => {
     setName("");
@@ -122,6 +129,8 @@ export function AuthScreen() {
     setPasscode("");
     setHospitalName("");
     setError(null);
+    setShowHospitalDropdown(false);
+    setHospitalSearch("");
   };
 
   const handleSignIn = async () => {
@@ -155,30 +164,44 @@ export function AuthScreen() {
     setError(null);
     try {
       if (activeRole === "chief_doctor") {
-        // 1. Register the hospital first
-        if (!hospitalName.trim()) { setError("Hospital name is required"); setLoading(false); return; }
-        const tempId = `tmp-${Date.now()}`;
-        const hospital = await registerHospital(hospitalName.trim(), tempId);
-        // 2. Sign up the chief doctor
+        let finalFacilityName = hospitalName.trim();
+        let finalFacilityId = selectedHospitalId;
+
+        if (chiefHospitalMode === "new") {
+          if (!finalFacilityName) {
+            setError("Hospital name is required");
+            setLoading(false);
+            return;
+          }
+          const tempId = `tmp-${Date.now()}`;
+          const createdHosp = await registerHospital(finalFacilityName, tempId);
+          finalFacilityName = createdHosp.name;
+          finalFacilityId = createdHosp.id;
+        } else {
+          if (!selectedHospital) {
+            setError("Please select a hospital from the dropdown");
+            setLoading(false);
+            return;
+          }
+          finalFacilityName = selectedHospital.name;
+          finalFacilityId = selectedHospital.id;
+        }
+
+        // Sign up chief doctor
         await signUp({
           name: name.trim(),
           role: "chief_doctor",
           phone: phone.trim() || undefined,
           passcode: passcode.trim(),
-          facilityName: hospital.name,
-          facilityId: hospital.id,
+          facilityName: finalFacilityName,
+          facilityId: finalFacilityId,
         });
         await refreshHospitals();
       } else {
         // Staff doctor / asha / receptionist
-        if (!selectedHospitalId) {
-          setError("Please select your hospital");
-          setLoading(false);
-          return;
-        }
-        const hospital = hospitals.find((h) => h.id === selectedHospitalId);
-        if (!hospital) {
-          setError("Selected hospital not found");
+        const targetHospital = hospitals.find((h) => h.id === selectedHospitalId) || hospitals[0];
+        if (!targetHospital) {
+          setError("Please select your hospital from the dropdown");
           setLoading(false);
           return;
         }
@@ -187,8 +210,8 @@ export function AuthScreen() {
           role: activeRole,
           phone: phone.trim() || undefined,
           passcode: passcode.trim(),
-          facilityName: hospital.name,
-          facilityId: hospital.id,
+          facilityName: targetHospital.name,
+          facilityId: targetHospital.id,
         });
       }
     } catch (err) {
@@ -200,7 +223,6 @@ export function AuthScreen() {
 
   const currentRoleMeta = ROLES.find((r) => r.id === activeRole) ?? ROLES[0];
   const isStaff = activeRole !== "chief_doctor";
-  const noHospitalsWarning = isStaff && !hospitalsLoading && hospitals.length === 0;
 
   return (
     <KeyboardAvoidingView
@@ -213,6 +235,7 @@ export function AuthScreen() {
           { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Header */}
         <View style={styles.brandHeader}>
@@ -287,18 +310,77 @@ export function AuthScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Sign In as {currentRoleMeta.label}</Text>
 
-            {/* Hospital Facility preview */}
-            {hospitals.length > 0 && (
-              <View style={styles.facilityBanner}>
-                <MaterialIcons name="local-hospital" size={18} color="#087E7B" />
+            {/* Hospital Dropdown */}
+            <Text style={styles.inputLabel}>Select Hospital Facility</Text>
+            <View style={styles.dropdownContainer}>
+              <Pressable
+                onPress={() => setShowHospitalDropdown(!showHospitalDropdown)}
+                style={[styles.dropdownTrigger, showHospitalDropdown && styles.dropdownTriggerActive]}
+              >
+                <View style={styles.dropdownIconCircle}>
+                  <MaterialIcons name="local-hospital" size={18} color="#087E7B" />
+                </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.facilityBannerLabel}>Hospital Facility</Text>
-                  <Text style={styles.facilityBannerName}>
-                    {hospitals.find((h) => h.id === selectedHospitalId)?.name || hospitals[0]?.name}
+                  <Text style={styles.dropdownSelectedName} numberOfLines={1}>
+                    {selectedHospital?.name || "Select Hospital Facility"}
                   </Text>
                 </View>
-              </View>
-            )}
+                <MaterialIcons
+                  name={showHospitalDropdown ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                  size={22}
+                  color="#087E7B"
+                />
+              </Pressable>
+
+              {showHospitalDropdown && (
+                <View style={styles.dropdownMenu}>
+                  <View style={styles.dropdownSearchRow}>
+                    <MaterialIcons name="search" size={18} color="#6C817C" />
+                    <TextInput
+                      value={hospitalSearch}
+                      onChangeText={setHospitalSearch}
+                      placeholder="Search hospitals..."
+                      placeholderTextColor="#8CA19B"
+                      style={styles.dropdownSearchInput}
+                    />
+                    {hospitalSearch ? (
+                      <Pressable onPress={() => setHospitalSearch("")}>
+                        <MaterialIcons name="close" size={16} color="#6C817C" />
+                      </Pressable>
+                    ) : null}
+                  </View>
+
+                  <ScrollView style={styles.dropdownList} nestedScrollEnabled>
+                    {filteredHospitals.map((h) => {
+                      const isSelected = selectedHospitalId === h.id || (!selectedHospitalId && hospitals[0]?.id === h.id);
+                      return (
+                        <Pressable
+                          key={h.id}
+                          onPress={() => {
+                            setSelectedHospitalId(h.id);
+                            setShowHospitalDropdown(false);
+                            setHospitalSearch("");
+                          }}
+                          style={[styles.dropdownItem, isSelected && styles.dropdownItemSelected]}
+                        >
+                          <MaterialIcons
+                            name="local-hospital"
+                            size={16}
+                            color={isSelected ? "#087E7B" : "#6C817C"}
+                          />
+                          <Text style={[styles.dropdownItemText, isSelected && styles.dropdownItemTextSelected]}>
+                            {h.name}
+                          </Text>
+                          {isSelected && (
+                            <MaterialIcons name="check" size={18} color="#087E7B" />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
 
             <Text style={styles.inputLabel}>Name, Phone, or ID</Text>
             <TextInput
@@ -348,75 +430,192 @@ export function AuthScreen() {
               </Text>
             </View>
 
-            {/* ── Chief Doctor: create hospital ── */}
+            {/* ── Chief Doctor: create hospital OR choose existing ── */}
             {activeRole === "chief_doctor" && (
               <>
-                <Text style={styles.cardSectionTitle}>🏥 Register Your Hospital</Text>
-                <Text style={styles.inputLabel}>Hospital Name</Text>
-                <TextInput
-                  value={hospitalName}
-                  onChangeText={setHospitalName}
-                  placeholder="e.g. Nandipur Primary Health Centre"
-                  placeholderTextColor="#8CA19B"
-                  style={styles.input}
-                />
+                <Text style={styles.cardSectionTitle}>🏥 Hospital Setup</Text>
+                <View style={styles.modeTabs}>
+                  <Pressable
+                    onPress={() => setChiefHospitalMode("new")}
+                    style={[styles.smallTab, chiefHospitalMode === "new" && styles.smallTabActive]}
+                  >
+                    <Text style={[styles.smallTabText, chiefHospitalMode === "new" && styles.smallTabTextActive]}>
+                      Register New Hospital
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setChiefHospitalMode("existing")}
+                    style={[styles.smallTab, chiefHospitalMode === "existing" && styles.smallTabActive]}
+                  >
+                    <Text style={[styles.smallTabText, chiefHospitalMode === "existing" && styles.smallTabTextActive]}>
+                      Select Existing ({hospitals.length})
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {chiefHospitalMode === "new" ? (
+                  <>
+                    <Text style={styles.inputLabel}>New Hospital Name</Text>
+                    <TextInput
+                      value={hospitalName}
+                      onChangeText={setHospitalName}
+                      placeholder="e.g. City General Hospital"
+                      placeholderTextColor="#8CA19B"
+                      style={styles.input}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.inputLabel}>Select Hospital from Database</Text>
+                    <View style={styles.dropdownContainer}>
+                      <Pressable
+                        onPress={() => setShowHospitalDropdown(!showHospitalDropdown)}
+                        style={[styles.dropdownTrigger, showHospitalDropdown && styles.dropdownTriggerActive]}
+                      >
+                        <View style={styles.dropdownIconCircle}>
+                          <MaterialIcons name="local-hospital" size={18} color="#087E7B" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.dropdownSelectedName} numberOfLines={1}>
+                            {selectedHospital?.name || "Select Hospital Facility"}
+                          </Text>
+                        </View>
+                        <MaterialIcons
+                          name={showHospitalDropdown ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                          size={22}
+                          color="#087E7B"
+                        />
+                      </Pressable>
+
+                      {showHospitalDropdown && (
+                        <View style={styles.dropdownMenu}>
+                          <View style={styles.dropdownSearchRow}>
+                            <MaterialIcons name="search" size={18} color="#6C817C" />
+                            <TextInput
+                              value={hospitalSearch}
+                              onChangeText={setHospitalSearch}
+                              placeholder="Search hospitals..."
+                              placeholderTextColor="#8CA19B"
+                              style={styles.dropdownSearchInput}
+                            />
+                          </View>
+
+                          <ScrollView style={styles.dropdownList} nestedScrollEnabled>
+                            {filteredHospitals.map((h) => {
+                              const isSelected = selectedHospitalId === h.id;
+                              return (
+                                <Pressable
+                                  key={h.id}
+                                  onPress={() => {
+                                    setSelectedHospitalId(h.id);
+                                    setShowHospitalDropdown(false);
+                                  }}
+                                  style={[styles.dropdownItem, isSelected && styles.dropdownItemSelected]}
+                                >
+                                  <MaterialIcons
+                                    name="local-hospital"
+                                    size={16}
+                                    color={isSelected ? "#087E7B" : "#6C817C"}
+                                  />
+                                  <Text style={[styles.dropdownItemText, isSelected && styles.dropdownItemTextSelected]}>
+                                    {h.name}
+                                  </Text>
+                                  {isSelected && (
+                                    <MaterialIcons name="check" size={18} color="#087E7B" />
+                                  )}
+                                </Pressable>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
+                  </>
+                )}
+
                 <View style={styles.infoBox}>
                   <MaterialIcons name="info-outline" size={16} color="#2369A5" />
                   <Text style={styles.infoText}>
-                    As Chief Doctor you will set up wards, beds, and manage the hospital.
-                    Other staff will select this hospital name when they register.
+                    Chief Doctors can manage wards, beds, and oversee consultations for this facility.
                   </Text>
                 </View>
               </>
             )}
 
-            {/* ── Staff: pick hospital ── */}
+            {/* ── Staff: Dropdown Picker for Hospital ── */}
             {isStaff && (
               <>
-                <Text style={styles.cardSectionTitle}>🏥 Select Hospital Facility</Text>
-                {hospitalsLoading ? (
-                  <ActivityIndicator color="#087E7B" style={{ marginVertical: 12 }} />
-                ) : hospitals.length === 0 ? (
-                  <View style={styles.warningBox}>
-                    <MaterialIcons name="warning" size={20} color="#9A5B00" />
-                    <Text style={styles.warningText}>
-                      No hospital registered yet. Please ask your Chief Doctor to register the hospital first.
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={styles.hospitalListContainer}>
-                    {hospitals.map((h) => {
-                      const isSelected = selectedHospitalId === h.id || (!selectedHospitalId && hospitals[0]?.id === h.id);
-                      return (
-                        <Pressable
-                          key={h.id}
-                          onPress={() => setSelectedHospitalId(h.id)}
-                          style={[
-                            styles.hospitalCardItem,
-                            isSelected && styles.hospitalCardItemSelected,
-                          ]}
-                        >
-                          <MaterialIcons
-                            name="local-hospital"
-                            size={18}
-                            color={isSelected ? "#087E7B" : "#6C817C"}
-                          />
-                          <Text
-                            style={[
-                              styles.hospitalCardItemText,
-                              isSelected && styles.hospitalCardItemTextSelected,
-                            ]}
-                          >
-                            {h.name}
-                          </Text>
-                          {isSelected && (
-                            <MaterialIcons name="check-circle" size={18} color="#087E7B" style={{ marginLeft: "auto" }} />
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                )}
+                <Text style={styles.cardSectionTitle}>🏥 Select Hospital Facility ({hospitals.length} Available)</Text>
+                <Text style={styles.inputLabel}>Hospital / PHC / CHC Dropdown</Text>
+                <View style={styles.dropdownContainer}>
+                  <Pressable
+                    onPress={() => setShowHospitalDropdown(!showHospitalDropdown)}
+                    style={[styles.dropdownTrigger, showHospitalDropdown && styles.dropdownTriggerActive]}
+                  >
+                    <View style={styles.dropdownIconCircle}>
+                      <MaterialIcons name="local-hospital" size={18} color="#087E7B" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dropdownSelectedName} numberOfLines={1}>
+                        {selectedHospital?.name || "Select Hospital Facility"}
+                      </Text>
+                    </View>
+                    <MaterialIcons
+                      name={showHospitalDropdown ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                      size={22}
+                      color="#087E7B"
+                    />
+                  </Pressable>
+
+                  {showHospitalDropdown && (
+                    <View style={styles.dropdownMenu}>
+                      <View style={styles.dropdownSearchRow}>
+                        <MaterialIcons name="search" size={18} color="#6C817C" />
+                        <TextInput
+                          value={hospitalSearch}
+                          onChangeText={setHospitalSearch}
+                          placeholder="Search hospital name..."
+                          placeholderTextColor="#8CA19B"
+                          style={styles.dropdownSearchInput}
+                        />
+                        {hospitalSearch ? (
+                          <Pressable onPress={() => setHospitalSearch("")}>
+                            <MaterialIcons name="close" size={16} color="#6C817C" />
+                          </Pressable>
+                        ) : null}
+                      </View>
+
+                      <ScrollView style={styles.dropdownList} nestedScrollEnabled>
+                        {filteredHospitals.map((h) => {
+                          const isSelected = selectedHospitalId === h.id || (!selectedHospitalId && hospitals[0]?.id === h.id);
+                          return (
+                            <Pressable
+                              key={h.id}
+                              onPress={() => {
+                                setSelectedHospitalId(h.id);
+                                setShowHospitalDropdown(false);
+                                setHospitalSearch("");
+                              }}
+                              style={[styles.dropdownItem, isSelected && styles.dropdownItemSelected]}
+                            >
+                              <MaterialIcons
+                                name="local-hospital"
+                                size={16}
+                                color={isSelected ? "#087E7B" : "#6C817C"}
+                              />
+                              <Text style={[styles.dropdownItemText, isSelected && styles.dropdownItemTextSelected]}>
+                                {h.name}
+                              </Text>
+                              {isSelected && (
+                                <MaterialIcons name="check" size={18} color="#087E7B" />
+                              )}
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
               </>
             )}
 
@@ -454,27 +653,25 @@ export function AuthScreen() {
               style={styles.input}
             />
 
-            {(!isStaff || !noHospitalsWarning) && (
-              <Pressable
-                onPress={handleSignUp}
-                disabled={loading || (isStaff && noHospitalsWarning)}
-                style={({ pressed }) => [
-                  styles.primaryBtn,
-                  { backgroundColor: currentRoleMeta.color, opacity: pressed || loading ? 0.75 : 1 },
-                ]}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <MaterialIcons name="person-add" size={18} color="#fff" />
-                    <Text style={styles.primaryBtnText}>
-                      {activeRole === "chief_doctor" ? "Register Hospital & Sign In" : "Register & Sign In"}
-                    </Text>
-                  </>
-                )}
-              </Pressable>
-            )}
+            <Pressable
+              onPress={handleSignUp}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.primaryBtn,
+                { backgroundColor: currentRoleMeta.color, opacity: pressed || loading ? 0.75 : 1 },
+              ]}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <MaterialIcons name="person-add" size={18} color="#fff" />
+                  <Text style={styles.primaryBtnText}>
+                    {activeRole === "chief_doctor" ? "Register & Sign In" : "Register & Sign In"}
+                  </Text>
+                </>
+              )}
+            </Pressable>
           </View>
         )}
       </ScrollView>
@@ -563,24 +760,61 @@ const styles = StyleSheet.create({
   },
   facilityBannerLabel: { color: "#087E7B", fontSize: 11, fontWeight: "700", textTransform: "uppercase" },
   facilityBannerName: { color: "#18332F", fontSize: 14, fontWeight: "800", marginTop: 2 },
-  hospitalListContainer: { gap: 8, marginVertical: 6 },
-  hospitalCardItem: {
+  dropdownContainer: { marginBottom: 10, position: "relative", zIndex: 10 },
+  dropdownTrigger: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: "#F7FAF9", borderRadius: 12, borderWidth: 1.5,
+    backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1.5,
     borderColor: "#D5E1DD", paddingHorizontal: 14, paddingVertical: 12,
   },
-  hospitalCardItemSelected: {
-    backgroundColor: "#E6F5F3", borderColor: "#087E7B",
+  dropdownTriggerActive: {
+    borderColor: "#087E7B", backgroundColor: "#F7FCFB",
   },
-  hospitalCardItemText: { color: "#4A6560", fontSize: 14, fontWeight: "700", flex: 1 },
-  hospitalCardItemTextSelected: { color: "#087E7B", fontWeight: "900" },
-  hospitalScroll: { marginBottom: 4 },
-  hospitalChip: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: "#F7FAF9", borderRadius: 10, borderWidth: 1.5,
-    borderColor: "#D5E1DD", paddingHorizontal: 12, paddingVertical: 8, marginRight: 8,
+  dropdownIconCircle: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: "#E6F5F3", alignItems: "center", justifyContent: "center",
   },
-  hospitalChipText: { color: "#4A6560", fontSize: 13, fontWeight: "700" },
+  dropdownSelectedName: {
+    color: "#18332F", fontSize: 15, fontWeight: "800",
+  },
+  dropdownMenu: {
+    backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1.5,
+    borderColor: "#087E7B", marginTop: 6, padding: 8,
+    shadowColor: "#087E7B", shadowOpacity: 0.12, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 }, elevation: 5,
+  },
+  dropdownSearchRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#F7FAF9", borderRadius: 10, borderWidth: 1,
+    borderColor: "#D5E1DD", paddingHorizontal: 10, paddingVertical: 6,
+    marginBottom: 8,
+  },
+  dropdownSearchInput: {
+    flex: 1, color: "#18332F", fontSize: 14, paddingVertical: 4,
+  },
+  dropdownList: { maxHeight: 180 },
+  dropdownItem: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10,
+  },
+  dropdownItemSelected: {
+    backgroundColor: "#E6F5F3",
+  },
+  dropdownItemText: {
+    color: "#4A6560", fontSize: 14, fontWeight: "600", flex: 1,
+  },
+  dropdownItemTextSelected: {
+    color: "#087E7B", fontWeight: "900",
+  },
+  smallTab: {
+    flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10,
+    backgroundColor: "#F7FAF9", borderWidth: 1, borderColor: "#D5E1DD",
+    alignItems: "center", justifyContent: "center", marginBottom: 6,
+  },
+  smallTabActive: {
+    backgroundColor: "#087E7B", borderColor: "#087E7B",
+  },
+  smallTabText: { color: "#4A6560", fontSize: 12, fontWeight: "700" },
+  smallTabTextActive: { color: "#FFFFFF", fontWeight: "800" },
   inlineRoles: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
   inlineRoleBtn: {
     borderRadius: 8, borderWidth: 1.5, borderColor: "#D5E1DD",

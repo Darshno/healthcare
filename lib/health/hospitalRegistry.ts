@@ -23,6 +23,36 @@ export const DEFAULT_HOSPITALS: HospitalRecord[] = [
     chiefDoctorId: "doc-chief-01",
     createdAt: 1700000000000,
   },
+  {
+    id: "hosp-chandpur-02",
+    name: "Chandpur Community Health Centre (CHC)",
+    chiefDoctorId: "doc-chief-02",
+    createdAt: 1700000001000,
+  },
+  {
+    id: "hosp-rampur-03",
+    name: "Rampur Sub-Divisional Civil Hospital",
+    chiefDoctorId: "doc-chief-03",
+    createdAt: 1700000002000,
+  },
+  {
+    id: "hosp-shivpur-04",
+    name: "Shivpur District General Hospital",
+    chiefDoctorId: "doc-chief-04",
+    createdAt: 1700000003000,
+  },
+  {
+    id: "hosp-kalyanpur-05",
+    name: "Kalyanpur Rural Referral Centre",
+    chiefDoctorId: "doc-chief-05",
+    createdAt: 1700000004000,
+  },
+  {
+    id: "hosp-meerapur-06",
+    name: "Meerapur Primary Health Centre",
+    chiefDoctorId: "doc-chief-06",
+    createdAt: 1700000005000,
+  },
 ];
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -41,7 +71,14 @@ export async function getHospitals(): Promise<HospitalRecord[]> {
       await AsyncStorage.setItem(HOSPITAL_REGISTRY_KEY, JSON.stringify(DEFAULT_HOSPITALS));
       return DEFAULT_HOSPITALS;
     }
-    return list;
+    // Merge defaults so all default hospitals are always present alongside custom registered ones
+    const combined = [...list];
+    for (const def of DEFAULT_HOSPITALS) {
+      if (!combined.some((h) => h.id === def.id || h.name.toLowerCase() === def.name.toLowerCase())) {
+        combined.push(def);
+      }
+    }
+    return combined;
   } catch {
     return DEFAULT_HOSPITALS;
   }
