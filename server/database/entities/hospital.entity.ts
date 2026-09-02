@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany } from "typeorm";
 import { User } from "./user.entity";
 import { Patient } from "./patient.entity";
+import { QueueEntry } from "./queue-entry.entity";
 
 @Entity("hospitals")
 export class Hospital {
@@ -21,4 +22,7 @@ export class Hospital {
 
   @OneToMany(() => Patient, (patient) => patient.hospital)
   patients: Patient[];
+
+  @OneToMany(() => QueueEntry, (qe) => qe.hospital)
+  queueEntries: QueueEntry[];
 }
