@@ -1,18 +1,14 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
 
 @Injectable()
 export class BedsService {
-  constructor(
-    // Placeholder for bed repository (will be added to database entities)
-  ) {}
+  constructor() {}
 
   /**
-   * Get all beds for a facility
+   * Get all beds for a hospital
    */
-  async getBedsByFacility(facilityId: string) {
-    // Return all units and beds for this facility
+  async getBedsByHospital(hospitalId: string) {
+    // Return all units and beds for this hospital
     return {
       units: [],
       beds: [],

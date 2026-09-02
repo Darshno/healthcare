@@ -14,7 +14,7 @@ export class SyncService {
 
   async pushOperations(data: {
     userId: number;
-    facilityId?: number;
+    hospitalId?: number;
     operations: Array<{
       id: string;
       type: string;
@@ -39,7 +39,7 @@ export class SyncService {
         const operation = this.syncRepo.create({
           operationId: op.id,
           userId: data.userId,
-          facilityId: data.facilityId ?? null,
+          hospitalId: data.hospitalId ?? null,
           operationType: op.type,
           entityId: op.entityId,
           payload: op.payload ?? null,
@@ -56,10 +56,10 @@ export class SyncService {
     return { acknowledgedIds, acknowledgedAt: Date.now() };
   }
 
-  async getOperationsSince(facilityId: number, since: Date): Promise<SyncOperation[]> {
+  async getOperationsSince(hospitalId: number, since: Date): Promise<SyncOperation[]> {
     return this.syncRepo.find({
       where: {
-        facilityId,
+        hospitalId,
         clientCreatedAt: { $gt: since } as any,
       },
       order: { clientCreatedAt: "ASC" },

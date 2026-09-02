@@ -3,11 +3,11 @@ import { EventEmitter } from "events";
 import { execSync } from "child_process";
 
 export type QueueEvent =
-  | { type: "enqueue"; facilityId: number; patientId: number; at: number }
-  | { type: "call_next"; facilityId: number; patientId: number; at: number }
-  | { type: "complete"; facilityId: number; patientId: number; at: number }
-  | { type: "transfer"; facilityId: number; patientId: number; targetFacilityId: number; at: number }
-  | { type: "pause"; facilityId: number; patientId: number; at: number };
+  | { type: "enqueue"; hospitalId: number; patientId: number; at: number }
+  | { type: "call_next"; hospitalId: number; patientId: number; at: number }
+  | { type: "complete"; hospitalId: number; patientId: number; at: number }
+  | { type: "transfer"; hospitalId: number; patientId: number; targetHospitalId: number; at: number }
+  | { type: "pause"; hospitalId: number; patientId: number; at: number };
 
 const CHANNEL_PREFIX = "queue:events:";
 
@@ -71,8 +71,8 @@ export class QueueRealtimeService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  channel(facilityId: number): string {
-    return `${CHANNEL_PREFIX}${facilityId}`;
+  channel(hospitalId: number): string {
+    return `${CHANNEL_PREFIX}${hospitalId}`;
   }
 
   /**
@@ -81,7 +81,7 @@ export class QueueRealtimeService implements OnModuleInit, OnModuleDestroy {
    */
   async publish(event: QueueEvent) {
     const message = JSON.stringify(event);
-    const channel = this.channel(event.facilityId);
+    const channel = this.channel(event.hospitalId);
     this.emitter.emit(channel, message);
     if (this.publisher) {
       try {
@@ -93,11 +93,11 @@ export class QueueRealtimeService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Registers a callback for queue events on a facility channel.
+   * Registers a callback for queue events on a hospital channel.
    * Returns an unsubscribe function.
    */
-  subscribe(facilityId: number, handler: (event: QueueEvent) => void): () => void {
-    const channel = this.channel(facilityId);
+  subscribe(hospitalId: number, handler: (event: QueueEvent) => void): () => void {
+    const channel = this.channel(hospitalId);
     const onMessage = (raw: string) => {
       try {
         handler(JSON.parse(raw) as QueueEvent);

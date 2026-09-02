@@ -9,7 +9,7 @@ import { TELECONSULT_QUEUE } from "./queue.constants";
 
 export interface TeleconsultJob {
   sessionId: number;
-  facilityId: number;
+  hospitalId: number;
   patientId: number;
   clinicianId?: number;
   action: "schedule" | "start" | "end" | "cancel";
@@ -26,8 +26,8 @@ export class TeleconsultQueueProcessor {
 
   @Process("schedule")
   async handleSchedule(job: Job<TeleconsultJob>) {
-    const { sessionId, facilityId, patientId, clinicianId } = job.data;
-    const key = `teleconsult:active:${facilityId}`;
+    const { sessionId, hospitalId, patientId, clinicianId } = job.data;
+    const key = `teleconsult:active:${hospitalId}`;
 
     const cacheEntry = {
       sessionId,
@@ -42,7 +42,7 @@ export class TeleconsultQueueProcessor {
       const session = this.sessionRepo.create({
         id: sessionId,
         patientId,
-        facilityId,
+        hospitalId,
         clinicianId: clinicianId ?? null,
         status: "scheduled",
         scheduledAt: new Date(),
@@ -52,14 +52,14 @@ export class TeleconsultQueueProcessor {
       this.logger.error(`Failed to persist teleconsult schedule for session ${sessionId}:`, error);
     }
 
-    this.logger.log(`Scheduled teleconsult session ${sessionId} for facility ${facilityId}`);
+    this.logger.log(`Scheduled teleconsult session ${sessionId} for hospital ${hospitalId}`);
     return { success: true };
   }
 
   @Process("start")
-  async handleStart(job: Job<{ sessionId: number; facilityId: number; clinicianId: number }>) {
-    const { sessionId, facilityId, clinicianId } = job.data;
-    const key = `teleconsult:active:${facilityId}`;
+  async handleStart(job: Job<{ sessionId: number; hospitalId: number; clinicianId: number }>) {
+    const { sessionId, hospitalId, clinicianId } = job.data;
+    const key = `teleconsult:active:${hospitalId}`;
     const session = await this.cache.getHash<any>(key, String(sessionId));
 
     if (session) {
@@ -71,7 +71,7 @@ export class TeleconsultQueueProcessor {
 
     try {
       await this.sessionRepo.update(
-        { id: sessionId, facilityId },
+        { id: sessionId, hospitalId },
         { status: "active" as any, startedAt: new Date(), clinicianId },
       );
     } catch (error) {
@@ -83,9 +83,9 @@ export class TeleconsultQueueProcessor {
   }
 
   @Process("end")
-  async handleEnd(job: Job<{ sessionId: number; facilityId: number }>) {
-    const { sessionId, facilityId } = job.data;
-    const key = `teleconsult:active:${facilityId}`;
+  async handleEnd(job: Job<{ sessionId: number; hospitalId: number }>) {
+    const { sessionId, hospitalId } = job.data;
+    const key = `teleconsult:active:${hospitalId}`;
     const session = await this.cache.getHash<any>(key, String(sessionId));
 
     if (session) {
@@ -96,7 +96,7 @@ export class TeleconsultQueueProcessor {
 
     try {
       await this.sessionRepo.update(
-        { id: sessionId, facilityId },
+        { id: sessionId, hospitalId },
         { status: "completed" as any, endedAt: new Date() },
       );
     } catch (error) {
@@ -108,14 +108,14 @@ export class TeleconsultQueueProcessor {
   }
 
   @Process("cancel")
-  async handleCancel(job: Job<{ sessionId: number; facilityId: number }>) {
-    const { sessionId, facilityId } = job.data;
-    const key = `teleconsult:active:${facilityId}`;
+  async handleCancel(job: Job<{ sessionId: number; hospitalId: number }>) {
+    const { sessionId, hospitalId } = job.data;
+    const key = `teleconsult:active:${hospitalId}`;
     await this.cache.delHash(key, String(sessionId));
 
     try {
       await this.sessionRepo.update(
-        { id: sessionId, facilityId },
+        { id: sessionId, hospitalId },
         { status: "cancelled" as any },
       );
     } catch (error) {

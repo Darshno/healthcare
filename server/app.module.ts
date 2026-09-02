@@ -8,7 +8,6 @@ import { DatabaseModule } from "./database/database.module";
 import { RedisModule } from "./redis/redis.module";
 import { QueueModule } from "./queue/queue.module";
 import { AuthModule } from "./modules/auth/auth.module";
-import { FacilityModule } from "./modules/facility/facility.module";
 import { PatientModule } from "./modules/patient/patient.module";
 import { TeleconsultModule } from "./modules/teleconsult/teleconsult.module";
 import { FhirModule } from "./modules/fhir/fhir.module";
@@ -84,7 +83,7 @@ const redisConfig = hasRedis ? parseRedisUrl(process.env.REDIS_URL!) : null;
     ...(hasDb ? [TypeOrmModule.forFeature([TriageResult])] : []),
     ...(hasRedis ? [BullModule.forRoot({ redis: redisConfig! }), QueueModule] : []),
     ChatModule,
-    ...(hasDb ? [AuthModule, FacilityModule, PatientModule, TeleconsultModule, FhirModule, HealthIdModule] : []),
+    ...(hasDb ? [AuthModule, PatientModule, TeleconsultModule, FhirModule, HealthIdModule] : []),
   ],
   controllers: [
     HealthController,

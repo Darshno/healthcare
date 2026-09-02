@@ -11,7 +11,7 @@ import { invokeLLM } from "../_core/llm";
 
 export interface TriageJob {
   patientId: number;
-  facilityId: number;
+  hospitalId: number;
   serviceType: string;
   screeningData: Record<string, unknown>;
   /** Free-text symptom description for AI-assisted classification (optional). */
@@ -38,12 +38,12 @@ export class TriageQueueProcessor {
 
   @Process("assess")
   async handleAssess(job: Job<TriageJob>) {
-    const { patientId, facilityId, serviceType, screeningData, symptomText, clinicianOverride } = job.data;
+    const { patientId, hospitalId, serviceType, screeningData, symptomText, clinicianOverride } = job.data;
 
     if (clinicianOverride) {
       const result = {
         patientId,
-        facilityId,
+        hospitalId,
         careCategory: clinicianOverride.careCategory,
         reason: clinicianOverride.reason,
         assessedBy: "clinician_override",
@@ -55,7 +55,7 @@ export class TriageQueueProcessor {
       try {
         const dbResult = this.triageRepo.create({
           patientId,
-          facilityId,
+          hospitalId,
           careCategory: clinicianOverride.careCategory,
           riskScore: 0,
           serviceType,
@@ -87,7 +87,7 @@ export class TriageQueueProcessor {
 
     const result = {
       patientId,
-      facilityId,
+      hospitalId,
       careCategory,
       riskScore,
       serviceType,
@@ -99,7 +99,7 @@ export class TriageQueueProcessor {
     try {
       const dbResult = this.triageRepo.create({
         patientId,
-        facilityId,
+        hospitalId,
         careCategory,
         riskScore,
         serviceType,

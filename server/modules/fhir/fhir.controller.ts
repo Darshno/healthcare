@@ -23,7 +23,7 @@ export class FhirController {
 
   @Get("Patient")
   async searchPatients(
-    @Query("facilityId") facilityId?: string,
+    @Query("hospitalId") hospitalId?: string,
     @Query("name") name?: string,
     @Query("_id") id?: string,
     @Query("_count") count?: string,
@@ -33,8 +33,8 @@ export class FhirController {
     if (id) {
       qb.andWhere("p.id = :id", { id: Number(id) });
     }
-    if (facilityId) {
-      qb.andWhere("p.facilityId = :facilityId", { facilityId: Number(facilityId) });
+    if (hospitalId) {
+      qb.andWhere("p.hospitalId = :hospitalId", { hospitalId: Number(hospitalId) });
     }
     if (name) {
       qb.andWhere("p.name ILIKE :name", { name: `%${name}%` });
@@ -70,7 +70,7 @@ export class FhirController {
 
   @Get("Encounter")
   async searchEncounters(
-    @Query("facilityId") facilityId?: string,
+    @Query("hospitalId") hospitalId?: string,
     @Query("patientId") patientId?: string,
     @Query("status") status?: string,
     @Query("_count") count?: string,
@@ -92,16 +92,16 @@ export class FhirController {
         take: limit,
       });
       encounters.push(...teleconsults.map((s) => encounterFromTeleconsult(s)));
-    } else if (facilityId) {
+    } else if (hospitalId) {
       const queueEntries = await this.queueRepo.find({
-        where: { facilityId: Number(facilityId) },
+        where: { hospitalId: Number(hospitalId) },
         order: { enteredAt: "DESC" },
         take: limit,
       });
       encounters.push(...queueEntries.map((e) => encounterFromQueueEntry(e)));
 
       const teleconsults = await this.teleconsultRepo.find({
-        where: { facilityId: Number(facilityId) },
+        where: { hospitalId: Number(hospitalId) },
         order: { scheduledAt: "DESC" },
         take: limit,
       });

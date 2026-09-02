@@ -21,7 +21,7 @@ export class PatientService {
 
     const patient = await this.patientRepo.findOne({
       where: { id },
-      relations: ["facility"],
+      relations: ["hospital"],
     });
     if (patient) {
       await this.cache.set(cacheKey, patient, this.CACHE_TTL);
@@ -29,9 +29,9 @@ export class PatientService {
     return patient;
   }
 
-  async findByFacility(facilityId: number, filters?: { careCategory?: string; search?: string }): Promise<Patient[]> {
+  async findByHospital(hospitalId: number, filters?: { careCategory?: string; search?: string }): Promise<Patient[]> {
     const qb = this.patientRepo.createQueryBuilder("patient")
-      .where("patient.facilityId = :facilityId", { facilityId });
+      .where("patient.hospitalId = :hospitalId", { hospitalId });
 
     if (filters?.careCategory) {
       qb.andWhere("patient.careCategory = :careCategory", { careCategory: filters.careCategory });
@@ -48,7 +48,7 @@ export class PatientService {
   async create(data: {
     localId: string;
     name: string;
-    facilityId: number;
+    hospitalId: number;
     dateOfBirth?: string;
     gender?: string;
     guardianName?: string;
@@ -59,7 +59,7 @@ export class PatientService {
   }): Promise<Patient> {
     const patient = this.patientRepo.create(data);
     const saved = await this.patientRepo.save(patient);
-    await this.cache.del(`facility:${data.facilityId}:patients`);
+    await this.cache.del(`hospital:${data.hospitalId}:patients`);
     return saved;
   }
 

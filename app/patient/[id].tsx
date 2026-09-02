@@ -49,15 +49,15 @@ export default function PatientDetailScreen() {
         </Pressable>
 
         <View style={styles.headerRow}>
-          <View style={styles.avatar}><Text style={styles.avatarText}>{patient.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</Text></View>
+          <View style={styles.avatar}><Text style={styles.avatarText}>{patient.name?.split(" ").map((part) => part[0]).slice(0, 2).join("") || "P"}</Text></View>
           <View style={styles.flex}>
             <Text style={commonStyles.title}>{patient.name}</Text>
-            <Text style={commonStyles.body}>{patient.localId} · {patient.age} years · {patient.sex[0].toUpperCase() + patient.sex.slice(1)}</Text>
+            <Text style={commonStyles.body}>{patient.localId} · {patient.age} years · {patient.sex ? patient.sex[0].toUpperCase() + patient.sex.slice(1) : "N/A"}</Text>
           </View>
           <SyncPill state={patient.syncState} />
         </View>
 
-        <View style={styles.tags}>{patient.careTags.length ? patient.careTags.map((tag) => <Text key={tag} style={styles.tag}>{t(tag)}</Text>) : <Text style={styles.tag}>{t("general")}</Text>}</View>
+        <View style={styles.tags}>{patient.careTags?.length ? patient.careTags.map((tag) => <Text key={tag} style={styles.tag}>{t(tag)}</Text>) : <Text style={styles.tag}>{t("general")}</Text>}</View>
         {patient.contact ? <Text style={[commonStyles.tiny, { marginTop: 10 }]}>{t("contact")}: {patient.contact}</Text> : null}
 
         {queueEntry ? (
@@ -78,9 +78,9 @@ export default function PatientDetailScreen() {
         <Section title={`${t("medication")} & ${t("safety")}`}>
           <View style={[commonStyles.card, styles.card]}>
             <Text style={styles.fieldLabel}>{t("medication")}</Text>
-            <Text style={[commonStyles.body, { marginTop: 3 }]}>{patient.currentMedicines.length ? patient.currentMedicines.join(", ") : "None on record"}</Text>
+            <Text style={[commonStyles.body, { marginTop: 3 }]}>{patient.currentMedicines?.length ? patient.currentMedicines.join(", ") : "None on record"}</Text>
             <Text style={[styles.fieldLabel, { marginTop: 13 }]}>{t("safety")}</Text>
-            <Text style={[commonStyles.body, { marginTop: 3 }]}>{patient.allergies.length ? patient.allergies.join(", ") : "No allergies recorded"}</Text>
+            <Text style={[commonStyles.body, { marginTop: 3 }]}>{patient.allergies?.length ? patient.allergies.join(", ") : "No allergies recorded"}</Text>
           </View>
         </Section>
 

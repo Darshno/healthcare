@@ -266,6 +266,7 @@ class SDKServer {
         const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
         await db.upsertUser({
           openId: userInfo.openId,
+          hospitalId: 1,
           name: userInfo.name || null,
           email: userInfo.email ?? null,
           loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
@@ -284,6 +285,7 @@ class SDKServer {
 
     await db.upsertUser({
       openId: user.openId,
+      hospitalId: user.hospitalId ?? 1,
       lastSignedIn: signedInAt,
     });
 
@@ -303,11 +305,12 @@ function buildCronUser(userInfo: GetUserInfoWithJwtResponse): AuthenticatedUser 
   const now = new Date();
   return {
     id: -1,
+    hospitalId: 1,
     openId: userInfo.openId,
     name: userInfo.name || "Manus Scheduled Task",
     email: null,
     loginMethod: null,
-    role: "user",
+    role: "admin",
     createdAt: now,
     updatedAt: now,
     lastSignedIn: now,

@@ -25,7 +25,7 @@ export const appRouter = router({
   sync: router({
     push: protectedProcedure
       .input(z.object({
-        facilityId: z.number().int().positive().optional(),
+        hospitalId: z.number().int().positive().optional(),
         operations: z.array(z.object({
           id: z.string().min(1).max(128),
           type: z.string().min(1).max(96),
@@ -38,7 +38,7 @@ export const appRouter = router({
         const operations = deduplicateOperations(input.operations);
         const acknowledgedIds = await db.recordSyncOperations({
           userId: ctx.user.id,
-          facilityId: input.facilityId,
+          hospitalId: input.hospitalId,
           operations,
         });
         return { acknowledgedIds, acknowledgedAt: Date.now() };
@@ -50,26 +50,14 @@ export const appRouter = router({
      * Get all units and beds for a facility
      */
     getByFacility: protectedProcedure
-      .input(z.object({ facilityId: z.string() }))
+      .input(z.object({ hospitalId: z.string() }))
       .query(async ({ input }) => {
         const database = await db.getDb();
         if (!database) throw new Error("Database not available");
 
-        const fId = parseInt(input.facilityId);
-        const units = await database.select().from(hospitalUnits).where(eq(hospitalUnits.facilityId, fId));
-        const allBeds = await database.select().from(beds).where(
-          // In a real app, we'd join or use an 'in' clause for unitIds
-          // For now, we'll filter locally or do another query if needed
-          // But let's just get all beds and filter by units found
-          // This is slightly inefficient but simple for now
-          // Actually, better: get all units, then get all beds for those units
-          // Or just get all beds and filter by unitId in a subsequent step if we had the facilityId in beds table.
-          // But the schema says beds has unitId, and hospitalUnits has facilityId.
-          // So we need a join.
-          {}
-        );
-
-        // Let's use a proper join
+        const fId = parseInt(input.hospitalId);
+        const units = await database.select().from(hospitalUnits).where(eq(hospitalUnits.hospitalId, fId));
+        // Join beds with hospitalUnits to filter by hospitalId
         const bedsWithUnits = await database
           .select({
             bed: beds,
@@ -77,7 +65,7 @@ export const appRouter = router({
           })
           .from(beds)
           .innerJoin(hospitalUnits, eq(beds.unitId, hospitalUnits.id))
-          .where(eq(hospitalUnits.facilityId, fId));
+          .where(eq(hospitalUnits.hospitalId, fId));
 
         return {
           units: units,
@@ -150,7 +138,7 @@ export const appRouter = router({
 
     createUnit: protectedProcedure
       .input(z.object({
-        facilityId: z.number(),
+        hospitalId: z.number(),
         name: z.string(),
         type: z.enum(["general_ward", "icu", "icu_pediatric", "maternity", "emergency", "isolation"]),
         totalBeds: z.number().int().positive(),
@@ -161,7 +149,7 @@ export const appRouter = router({
         if (!database) throw new Error("Database not available");
 
         const [unit] = await database.insert(hospitalUnits).values({
-          facilityId: input.facilityId,
+          hospitalId: input.hospitalId,
           name: input.name,
           type: input.type,
           totalBeds: input.totalBeds,

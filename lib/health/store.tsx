@@ -9,6 +9,7 @@ import type {
   Appointment,
   AppointmentStatus,
   CareTag,
+  CurrentUser,
   Encounter,
   HealthState,
   HospitalFacility,
@@ -25,6 +26,7 @@ import type {
   QueueStatus,
   ReferralStatus,
   SyncState,
+  UserRole,
 } from "./types";
 
 const STORAGE_KEY = "rural-health-access.workspace.v2";
@@ -33,6 +35,7 @@ const makeId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(sequ
 const now = Date.now();
 
 const EMPTY_STATE: HealthState = {
+  currentUser: null,
   language: "en",
   patients: [],
   queue: [],
@@ -107,6 +110,7 @@ type HealthContextValue = {
   referralLabel: (status: ReferralStatus) => string;
   syncLabel: (syncState: SyncState) => string;
   setLanguage: (language: AppLanguage) => void;
+  setCurrentUser: (user: CurrentUser | null) => void;
   // Patient & Clinical Actions
   registerPatient: (input: RegistrationInput) => string;
   joinQueue: (input: { patientId: string; service: string; priority?: Priority; priorityReason?: Parameters<typeof priorityReasonLabel>[1] }) => string;
@@ -186,15 +190,44 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     setState((previous) => ({ ...previous, language }));
   }, []);
 
+  const setCurrentUser = useCallback((user: CurrentUser | null) => {
+    setState((previous) => ({ ...previous, currentUser: user }));
+  }, []);
+
+  const findBestDoctor = (service: string, priority: Priority, doctors: HospitalFacility["doctors"]) => {
+    // Priority-based matching: Emergencies can be seen by any emergency-capable doc or anyone available
+    if (priority === "emergency") {
+      return doctors.find((d) => d.specialization.toLowerCase().includes("emergency")) || doctors[0];
+    }
+
+    // Match by specialization/service
+    const eligible = doctors.filter((d) =>
+      d.specialization.toLowerCase() === service.toLowerCase() ||
+      d.specialization.toLowerCase().includes(service.toLowerCase())
+    );
+
+    // For simplicity in this local store, we return the first eligible doctor
+    // In a real system, we would check their current queue length
+    return eligible[0] || doctors[0];
+  };
+
   const registerPatient = useCallback((input: RegistrationInput) => {
+    if (!state.currentUser) {
+      Alert.alert("Session Error", "No active user session found. Please log in.");
+      return "";
+    }
+
     const patientId = makeId("patient");
     const queueId = makeId("queue");
     const timestamp = Date.now();
     const assessment = evaluatePriority(input.priorityInput);
     const token = 100 + (state.queue.length + 1);
 
+    const assignedDoctor = findBestDoctor(input.service, assessment.priority, state.hospitals[0]?.doctors || []);
+
     const patient: Patient = {
       id: patientId,
+      facilityId: state.currentUser.facilityId,
       localId: `RH-${Math.floor(1000 + Math.random() * 9000)}`,
       name: input.name.trim(),
       age: input.age,
@@ -208,6 +241,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     };
     const queueEntry: QueueEntry = {
       id: queueId,
+      facilityId: state.currentUser.facilityId,
       patientId,
       service: input.service,
       arrivedAt: timestamp,
@@ -215,14 +249,16 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       priorityReason: assessment.reason,
       status: "waiting",
       tokenNumber: token,
-      roomNumber: "Room 1",
+      roomNumber: assignedDoctor ? `Room ${Math.floor(Math.random() * 10) + 1}` : "Triage",
+      doctorName: assignedDoctor?.name || "Pending Assignment",
       syncState: "pending",
     };
     const triageEncounter: Encounter = {
       id: makeId("encounter"),
+      facilityId: state.currentUser.facilityId,
       patientId,
       type: "triage",
-      note: `Initial triage: ${assessment.reason}.`,
+      note: `Initial triage: ${assessment.reason}. Assigned to ${assignedDoctor?.name || "Pending"}.`,
       createdAt: timestamp,
       syncState: "pending",
     };
@@ -236,15 +272,21 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       return addOperation(addOperation(next, "patient.create", patientId), "queue.add", queueId);
     });
     return patientId;
-  }, [state.queue.length]);
+  }, [state.queue.length, state.currentUser]);
 
   const joinQueue = useCallback((input: { patientId: string; service: string; priority?: Priority; priorityReason?: Parameters<typeof priorityReasonLabel>[1] }) => {
+    if (!state.currentUser || (state.currentUser.role !== "ASHA_WORKER" && state.currentUser.role !== "RECEPTIONIST")) {
+      Alert.alert("Permission Denied", "Only Asha workers or receptionists can add patients to the queue.");
+      return "";
+    }
+
     const queueId = makeId("queue");
     const timestamp = Date.now();
     const token = 100 + (state.queue.length + 1);
 
     const queueEntry: QueueEntry = {
       id: queueId,
+      facilityId: state.currentUser.facilityId,
       patientId: input.patientId,
       service: input.service,
       arrivedAt: timestamp,
@@ -266,25 +308,41 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     });
 
     return queueId;
-  }, [state.queue.length]);
+  }, [state.queue.length, state.currentUser]);
 
   const updateQueueStatus = useCallback((queueId: string, status: QueueStatus) => {
+    if (!state.currentUser || (state.currentUser.role !== "ASHA_WORKER" && state.currentUser.role !== "DOCTOR")) {
+      Alert.alert("Permission Denied", "You do not have permission to update queue status.");
+      return;
+    }
+
     setState((previous) => {
       const next = { ...previous, queue: previous.queue.map((item) => item.id === queueId ? { ...item, status, syncState: "pending" as const } : item) };
       return addOperation(next, "queue.status", queueId);
     });
-  }, []);
+  }, [state.currentUser]);
 
   const overrideQueuePriority = useCallback((queueId: string, priority: Priority, reason: string) => {
+    if (!state.currentUser || state.currentUser.role !== "DOCTOR") {
+      Alert.alert("Permission Denied", "Only doctors can override queue priority.");
+      return;
+    }
+
     setState((previous) => {
       const next = { ...previous, queue: previous.queue.map((item) => item.id === queueId ? { ...item, priority, priorityReason: "clinicianUrgent" as const, overrideReason: reason, syncState: "pending" as const } : item) };
       return addOperation(next, "queue.override", queueId);
     });
-  }, []);
+  }, [state.currentUser]);
 
   const addEncounter = useCallback((patientId: string, note: string, diagnosis?: string, prescriptions?: string[], doctorName?: string) => {
+    if (!state.currentUser || state.currentUser.role !== "DOCTOR") {
+      Alert.alert("Permission Denied", "Only doctors can record encounters.");
+      return;
+    }
+
     const encounter: Encounter = {
       id: makeId("encounter"),
+      facilityId: state.currentUser.facilityId,
       patientId,
       type: "consultation",
       note,
@@ -295,19 +353,37 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       syncState: "pending",
     };
     setState((previous) => addOperation({ ...previous, encounters: [encounter, ...previous.encounters] }, "encounter.create", encounter.id));
-  }, []);
+  }, [state.currentUser]);
 
   const createReferral = useCallback((input: { patientId: string; destination: string; reason: string; urgency: Priority }) => {
-    const referral = { id: makeId("referral"), ...input, status: "draft" as const, createdAt: Date.now(), updatedAt: Date.now(), syncState: "pending" as const };
+    if (!state.currentUser || (state.currentUser.role !== "DOCTOR" && state.currentUser.role !== "CHIEF_DOCTOR")) {
+      Alert.alert("Permission Denied", "Only clinicians can create referrals.");
+      return;
+    }
+
+    const referral = {
+      id: makeId("referral"),
+      facilityId: state.currentUser.facilityId,
+      ...input,
+      status: "draft" as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      syncState: "pending" as const
+    };
     setState((previous) => addOperation({ ...previous, referrals: [referral, ...previous.referrals] }, "referral.create", referral.id));
-  }, []);
+  }, [state.currentUser]);
 
   const updateReferralStatus = useCallback((referralId: string, status: ReferralStatus) => {
+    if (!state.currentUser || (state.currentUser.role !== "DOCTOR" && state.currentUser.role !== "CHIEF_DOCTOR")) {
+      Alert.alert("Permission Denied", "You do not have permission to update referral status.");
+      return;
+    }
+
     setState((previous) => {
       const next = { ...previous, referrals: previous.referrals.map((item) => item.id === referralId ? { ...item, status, updatedAt: Date.now(), syncState: "pending" as const } : item) };
       return addOperation(next, "referral.status", referralId);
     });
-  }, []);
+  }, [state.currentUser]);
 
   const recordInventoryTransaction = useCallback((medicineId: string, type: InventoryTransactionType, quantity: number) => {
     const signedQuantity = type === "receipt" ? quantity : -Math.abs(quantity);
@@ -627,6 +703,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     referralLabel: (status) => referralLabel(state.language, status),
     syncLabel: (syncState) => syncLabel(state.language, syncState),
     setLanguage,
+    setCurrentUser,
     registerPatient,
     joinQueue,
     updateQueueStatus,
@@ -649,12 +726,12 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     getFacilityUnits,
     getFacilityStats,
     syncNow,
-    getPatient: (patientId) => state.patients.find((patient) => patient.id === patientId),
-    getPatientEncounters: (patientId) => state.encounters.filter((encounter) => encounter.patientId === patientId).sort((a, b) => b.createdAt - a.createdAt),
-    getPatientAppointments: (patientId) => state.appointments.filter((a) => a.patientId === patientId).sort((a, b) => b.createdAt - a.createdAt),
-    getPatientOrders: (patientId) => state.medicineOrders.filter((o) => o.patientId === patientId).sort((a, b) => b.createdAt - a.createdAt),
-    getPatientActiveQueue: (patientId) => state.queue.find((q) => q.patientId === patientId && q.status !== "completed"),
-  }), [addEncounter, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus]);
+    getPatient: (patientId) => state.patients.find((patient) => patient.id === patientId && patient.facilityId === state.currentUser?.facilityId),
+    getPatientEncounters: (patientId) => state.encounters.filter((encounter) => encounter.patientId === patientId && encounter.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
+    getPatientAppointments: (patientId) => state.appointments.filter((a) => a.patientId === patientId && a.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
+    getPatientOrders: (patientId) => state.medicineOrders.filter((o) => o.patientId === patientId && o.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
+    getPatientActiveQueue: (patientId) => state.queue.find((q) => q.patientId === patientId && q.status !== "completed" && q.facilityId === state.currentUser?.facilityId),
+  }), [addEncounter, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setCurrentUser, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus]);
 
   return <HealthContext.Provider value={value}>{children}</HealthContext.Provider>;
 }

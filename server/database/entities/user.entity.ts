@@ -5,9 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from "typeorm";
-import { FacilityMembership } from "./facility-membership.entity";
 import { SyncOperation } from "./sync-operation.entity";
+import { Hospital } from "./hospital.entity";
 
 @Entity("users")
 export class User {
@@ -26,8 +28,11 @@ export class User {
   @Column({ type: "varchar", length: 64, nullable: true })
   loginMethod: string | null;
 
-  @Column({ type: "enum", enum: ["user", "admin"], default: "user" })
-  role: "user" | "admin";
+  @Column({ type: "enum", enum: ["chief_doc", "doctor", "asha", "receptionist", "admin"], default: "doctor" })
+  role: "chief_doc" | "doctor" | "asha" | "receptionist" | "admin";
+
+  @Column({ type: "int" })
+  hospitalId: number;
 
   @CreateDateColumn()
   createdAt: Date;
@@ -38,8 +43,9 @@ export class User {
   @Column({ type: "timestamptz", default: () => "NOW()" })
   lastSignedIn: Date;
 
-  @OneToMany(() => FacilityMembership, (fm) => fm.user)
-  facilityMemberships: FacilityMembership[];
+  @ManyToOne(() => Hospital, (h) => h.users, { onDelete: "SET NULL" })
+  @JoinColumn({ name: "hospitalId" })
+  hospital: Hospital;
 
   @OneToMany(() => SyncOperation, (so) => so.user)
   syncOperations: SyncOperation[];

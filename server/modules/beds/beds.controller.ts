@@ -6,11 +6,11 @@ export class BedsController {
   constructor(private readonly bedsService: BedsService) {}
 
   /**
-   * Get all beds and units for a facility
+   * Get all beds and units for a hospital
    */
-  @Get("facility/:facilityId")
-  async getBedsByFacility(@Param("facilityId") facilityId: string) {
-    return await this.bedsService.getBedsByFacility(facilityId);
+  @Get("hospital/:hospitalId")
+  async getBedsByHospital(@Param("hospitalId") hospitalId: string) {
+    return await this.bedsService.getBedsByHospital(hospitalId);
   }
 
   /**

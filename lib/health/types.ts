@@ -24,6 +24,7 @@ export type InventoryTransactionType = "receipt" | "dispense" | "adjustment" | "
 
 export type Patient = {
   id: string;
+  facilityId: string;
   localId: string;
   name: string;
   age: number;
@@ -41,6 +42,7 @@ export type Patient = {
 
 export type QueueEntry = {
   id: string;
+  facilityId: string;
   patientId: string;
   service: string;
   arrivedAt: number;
@@ -56,6 +58,7 @@ export type QueueEntry = {
 
 export type Encounter = {
   id: string;
+  facilityId: string;
   patientId: string;
   type: "triage" | "consultation" | "followUp";
   doctorName?: string;
@@ -68,6 +71,7 @@ export type Encounter = {
 
 export type Referral = {
   id: string;
+  facilityId: string;
   patientId: string;
   destination: string;
   reason: string;
@@ -80,6 +84,7 @@ export type Referral = {
 
 export type Medicine = {
   id: string;
+  facilityId: string;
   name: string;
   localName: string;
   category?: "antibiotic" | "analgesic" | "maternal" | "chronic" | "pediatric" | "general";
@@ -179,6 +184,7 @@ export type MedicineOrderItem = {
 
 export type MedicineOrder = {
   id: string;
+  facilityId: string;
   patientId: string;
   patientName: string;
   patientPhone?: string;
@@ -234,9 +240,18 @@ export type BedOccupancy = {
   syncState: SyncState;
 };
 
-// ─── Master State ─────────────────────────────────────────────────────────────
+export type UserRole = "ASHA_WORKER" | "DOCTOR" | "CHIEF_DOCTOR" | "RECEPTIONIST";
+
+export type CurrentUser = {
+  id: string;
+  name: string;
+  facilityId: string;
+  role: UserRole;
+  specialty?: string;
+};
 
 export type HealthState = {
+  currentUser: CurrentUser | null;
   language: AppLanguage;
   patients: Patient[];
   queue: QueueEntry[];

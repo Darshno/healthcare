@@ -12,7 +12,7 @@ export class TeleconsultController {
     @Body()
     body: {
       patientId: number;
-      facilityId: number;
+      hospitalId: number;
       clinicianId?: number;
       notes?: string;
     },
@@ -21,11 +21,11 @@ export class TeleconsultController {
   }
 
   @Get()
-  async findByFacility(
-    @Query("facilityId") facilityId: string,
+  async findByHospital(
+    @Query("hospitalId") hospitalId: string,
     @Query("status") status?: string,
   ) {
-    return this.teleconsultService.findByFacility(Number(facilityId), status);
+    return this.teleconsultService.findByHospital(Number(hospitalId), status);
   }
 
   @Get("patient/:patientId")
@@ -33,9 +33,9 @@ export class TeleconsultController {
     return this.teleconsultService.findByPatient(Number(patientId));
   }
 
-  @Get("active/:facilityId")
-  async getActive(@Param("facilityId") facilityId: string) {
-    return this.teleconsultService.getActiveSessions(Number(facilityId));
+  @Get("active/:hospitalId")
+  async getActive(@Param("hospitalId") hospitalId: string) {
+    return this.teleconsultService.getActiveSessions(Number(hospitalId));
   }
 
   @Get(":id")

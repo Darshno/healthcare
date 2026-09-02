@@ -2,8 +2,7 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import {
   User,
-  Facility,
-  FacilityMembership,
+  Hospital,
   SyncOperation,
   Patient,
   QueueEntry,
@@ -16,8 +15,7 @@ import { execSync } from "child_process";
 
 const entities = [
   User,
-  Facility,
-  FacilityMembership,
+  Hospital,
   SyncOperation,
   Patient,
   QueueEntry,
