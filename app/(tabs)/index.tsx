@@ -5,16 +5,12 @@ import { PrimaryButton, PriorityBadge, SectionHeader, SyncPill, commonStyles } f
 import { useHealth } from "@/lib/health/store";
 import { sortQueue } from "@/lib/health/workflows";
 import { useUserAuth } from "@/lib/health/DoctorAuthContext";
-import { PatientPortal } from "@/components/health/PatientPortal";
 
 export default function OperationsHome() {
   const { state, t, syncNow, syncing, syncError, setLanguage, priorityReasonLabel } = useHealth();
   const { user, role, doctor, healthWorker, signOut } = useUserAuth();
 
-  // If active user is a Patient, render the dedicated Patient Portal interface
-  if (role === "patient") {
-    return <PatientPortal />;
-  }
+  // No patient role in the new system
 
   const handleSignOut = () => {
     signOut();
@@ -31,9 +27,22 @@ export default function OperationsHome() {
     ? user.name.replace(/^Dr\.\s*/i, "").trim().slice(0, 2).toUpperCase()
     : "HC";
 
-  const roleTitle = role === "doctor" ? "Doctor / Medical Officer" : "Health Helper / ASHA";
-  const roleColor = role === "doctor" ? "#087E7B" : "#B66A00";
-  const roleBg = role === "doctor" ? "#E6F5F3" : "#FFF4E5";
+  const roleTitle =
+    role === "chief_doctor" ? "Chief Doctor"
+    : role === "doctor" ? "Doctor / Medical Officer"
+    : role === "asha_worker" ? "ASHA Worker"
+    : role === "receptionist" ? "Receptionist"
+    : "Staff";
+  const roleColor =
+    role === "chief_doctor" ? "#087E7B"
+    : role === "doctor" ? "#087E7B"
+    : role === "asha_worker" ? "#B66A00"
+    : "#6B3FA0";
+  const roleBg =
+    role === "chief_doctor" ? "#E6F5F3"
+    : role === "doctor" ? "#E6F5F3"
+    : role === "asha_worker" ? "#FFF4E5"
+    : "#F3EEFF";
 
   return (
     <View style={commonStyles.screen}>
@@ -68,9 +77,9 @@ export default function OperationsHome() {
                 </View>
               </View>
               <Text style={styles.profileText}>
-                {role === "doctor"
+                {(role === "doctor" || role === "chief_doctor")
                   ? `${doctor?.specialization || "Medical Officer"} · ID: ${doctor?.doctorId || "DOC"}`
-                  : `${healthWorker?.designation || "ASHA Worker"} · ${healthWorker?.assignedVillage || "Village Sector"}`}
+                  : `${healthWorker?.designation || "ASHA Worker"} · ${user?.facilityName || ""}`}
               </Text>
             </View>
             <Pressable

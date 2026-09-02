@@ -1,512 +1,338 @@
-import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, Modal, TextInput, StyleSheet } from "react-native";
-import { useHealth } from "@/lib/health/store";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { trpc } from "@/lib/trpc";
+import { useState } from "react";
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { useHealth } from "@/lib/health/store";
+import { useUserAuth } from "@/lib/health/DoctorAuthContext";
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-    padding: 16,
-  },
-  header: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 16,
-    color: "#1a1a1a",
-  },
-  unitCard: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: "#2369A5",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  unitTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 8,
-    color: "#2369A5",
-  },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-    flexWrap: "wrap",
-  },
-  statItem: {
-    flex: 1,
-    marginRight: 8,
-    marginBottom: 8,
-    minWidth: "45%",
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#2369A5",
-  },
-  occupancyBar: {
-    height: 8,
-    backgroundColor: "#e0e0e0",
-    borderRadius: 4,
-    overflow: "hidden",
-    marginBottom: 12,
-  },
-  occupancyFill: {
-    height: "100%",
-    backgroundColor: "#4CAF50",
-  },
-  bedsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  bedItem: {
-    width: "22%",
-    aspectRatio: 1,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-  },
-  bedAvailable: {
-    backgroundColor: "#E8F5E9",
-    borderColor: "#4CAF50",
-  },
-  bedOccupied: {
-    backgroundColor: "#FFEBEE",
-    borderColor: "#F44336",
-  },
-  bedMaintenance: {
-    backgroundColor: "#FFF3E0",
-    borderColor: "#FF9800",
-  },
-  bedNumber: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#1a1a1a",
-    textAlign: "center",
-  },
-  bedIcon: {
-    marginBottom: 4,
-  },
-  button: {
-    flexDirection: "row",
-    backgroundColor: "#2369A5",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-  },
-  buttonText: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modal: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: "80%",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 16,
-    color: "#1a1a1a",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    fontSize: 14,
-  },
-  actionButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginBottom: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionButtonPrimary: {
-    backgroundColor: "#2369A5",
-  },
-  actionButtonSecondary: {
-    backgroundColor: "#FF9800",
-  },
-  actionButtonDanger: {
-    backgroundColor: "#F44336",
-  },
-  actionButtonText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 14,
-    marginLeft: 8,
-  },
-  emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: "#999",
-    marginTop: 12,
-  },
-  isFull: {
-    backgroundColor: "#FFEBEE",
-    borderColor: "#F44336",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  isFullText: {
-    color: "#F44336",
-    fontWeight: "600",
-    fontSize: 14,
-    marginLeft: 8,
-    flex: 1,
-  },
-});
+// ──────────────────────────────────────────────────────────────────────────────
+// Types
+// ──────────────────────────────────────────────────────────────────────────────
 
-type BedManagementScreenProps = {
+type Props = {
   facilityId: string;
 };
 
-export function BedManagementScreen({ facilityId }: BedManagementScreenProps) {
-  const health = useHealth();
-  const [selectedBed, setSelectedBed] = useState<string | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [actionType, setActionType] = useState<"occupy" | "release" | "maintenance" | "createUnit" | "createBed">("occupy");
-  const [patientId, setPatientId] = useState("");
-  const [notes, setNotes] = useState("");
+// ──────────────────────────────────────────────────────────────────────────────
+// Component
+// ──────────────────────────────────────────────────────────────────────────────
 
-  // Unit Creation State
-  const [unitName, setUnitName] = useState("");
-  const [unitType, setUnitType] = useState("general_ward");
-  const [unitTotalBeds, setUnitTotalBeds] = useState("");
+export function BedManagementScreen({ facilityId }: Props) {
+  const { state, getFacilityUnits, getBedsByUnit, addWard, occupyBed, releaseBed } = useHealth();
+  const { role } = useUserAuth();
+  const isChief = role === "chief_doctor";
 
-  // Bed Creation State
-  const [selectedUnitId, setSelectedUnitId] = useState("");
-  const [bedNumber, setBedNumber] = useState("");
+  // Add ward form
+  const [wardName, setWardName] = useState("");
+  const [bedCount, setBedCount] = useState("");
+  const [adding, setAdding] = useState(false);
 
-  const createUnitMutation = trpc.beds.createUnit.useMutation({
-    onSuccess: () => {
-      setModalVisible(false);
-      setUnitName("");
-      setUnitTotalBeds("");
-    },
-  });
+  const units = getFacilityUnits(facilityId);
 
-  const createBedMutation = trpc.beds.createBed.useMutation({
-    onSuccess: () => {
-      setModalVisible(false);
-      setBedNumber("");
-    },
-  });
-
-  const facilityStats = health.getFacilityStats(facilityId);
-  const units = health.getFacilityUnits(facilityId);
-
-  const handleBedPress = (bedId: string, currentStatus: string) => {
-    setSelectedBed(bedId);
-    if (currentStatus === "occupied") {
-      setActionType("release");
-    } else if (currentStatus === "maintenance") {
-      setActionType("release");
-    } else {
-      setActionType("occupy");
+  const handleAddWard = () => {
+    const count = parseInt(bedCount, 10);
+    if (!wardName.trim()) {
+      Alert.alert("Missing Info", "Please enter a ward name.");
+      return;
     }
-    setModalVisible(true);
+    if (!bedCount.trim() || isNaN(count) || count < 1 || count > 200) {
+      Alert.alert("Missing Info", "Please enter a valid bed count (1–200).");
+      return;
+    }
+    addWard(wardName.trim(), count);
+    setWardName("");
+    setBedCount("");
+    setAdding(false);
   };
 
-  const handleSubmitAction = () => {
-    if (!selectedBed && actionType !== "createUnit" && actionType !== "createBed") return;
-
-    switch (actionType) {
-      case "occupy":
-        if (!patientId) {
-          alert("Please enter patient ID");
-          return;
-        }
-        health.occupyBed(selectedBed!, patientId, notes);
-        break;
-      case "release":
-        health.releaseBed(selectedBed!);
-        break;
-      case "maintenance":
-        health.setMaintenanceBed(selectedBed!, true, notes);
-        break;
-      case "createUnit":
-        createUnitMutation.mutate({
-          facilityId: parseInt(facilityId),
-          name: unitName,
-          type: unitType as any,
-          totalBeds: parseInt(unitTotalBeds),
-          description: "",
-        });
-        break;
-      case "createBed":
-        createBedMutation.mutate({
-          unitId: parseInt(selectedUnitId),
-          bedNumber: bedNumber,
-        });
-        break;
-    }
-
-    setModalVisible(false);
-    setPatientId("");
-    setNotes("");
-    setSelectedBed(null);
-  };
-
-  if (!facilityStats) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.header}>Bed Management</Text>
-        <View style={styles.emptyState}>
-          <MaterialIcons name="error-outline" size={48} color="#999" />
-          <Text style={styles.emptyText}>Facility not found</Text>
-        </View>
-      </View>
-    );
-  }
+  const totalBeds = units.reduce((sum, u) => sum + getBedsByUnit(u.id).length, 0);
+  const occupiedBeds = units.reduce(
+    (sum, u) => sum + getBedsByUnit(u.id).filter((b) => b.status === "occupied").length,
+    0,
+  );
+  const availableBeds = totalBeds - occupiedBeds;
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <Text style={styles.header}>Bed Management</Text>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => {
-              setActionType("createUnit");
-              setModalVisible(true);
-            }}
-          >
-            <MaterialIcons name="add-circle" size={18} color="white" />
-            <Text style={styles.buttonText}>Unit</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => {
-              setActionType("createBed");
-              setModalVisible(true);
-            }}
-          >
-            <MaterialIcons name="add-box" size={18} color="white" />
-            <Text style={styles.buttonText}>Bed</Text>
-          </TouchableOpacity>
-        </View>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Summary Bar */}
+      <View style={styles.summaryRow}>
+        <SummaryPill icon="hotel" value={String(totalBeds)} label="Total Beds" color="#2369A5" />
+        <SummaryPill icon="check-circle" value={String(availableBeds)} label="Available" color="#198754" />
+        <SummaryPill icon="people" value={String(occupiedBeds)} label="Occupied" color="#B42318" />
       </View>
 
-      {/* Facility Overview */}
-      <View style={styles.unitCard}>
-        <Text style={styles.unitTitle}>Facility Overview</Text>
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Total Beds</Text>
-            <Text style={styles.statValue}>{facilityStats.totalBeds}</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Occupied</Text>
-            <Text style={[styles.statValue, { color: "#F44336" }]}>{facilityStats.occupiedBeds}</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Available</Text>
-            <Text style={[styles.statValue, { color: "#4CAF50" }]}>{facilityStats.availableBeds}</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Maintenance</Text>
-            <Text style={[styles.statValue, { color: "#FF9800" }]}>{facilityStats.maintenanceBeds}</Text>
-          </View>
+      {/* Add Ward — Chief Doctor only */}
+      {isChief && (
+        <View style={styles.card}>
+          {adding ? (
+            <>
+              <Text style={styles.cardTitle}>Add New Ward</Text>
+              <Text style={styles.inputLabel}>Ward Name</Text>
+              <TextInput
+                value={wardName}
+                onChangeText={setWardName}
+                placeholder="e.g. Ward 1, Maternity Ward"
+                placeholderTextColor="#8CA19B"
+                style={styles.input}
+                autoFocus
+              />
+              <Text style={styles.inputLabel}>Number of Beds</Text>
+              <TextInput
+                value={bedCount}
+                onChangeText={setBedCount}
+                placeholder="e.g. 20"
+                placeholderTextColor="#8CA19B"
+                keyboardType="numeric"
+                style={styles.input}
+              />
+              {bedCount.trim() && !isNaN(parseInt(bedCount, 10)) && parseInt(bedCount, 10) > 0 && (
+                <View style={styles.previewBox}>
+                  <MaterialIcons name="bed" size={16} color="#087E7B" />
+                  <Text style={styles.previewText}>
+                    This will create {bedCount} beds, each with a checkbox to mark occupied/available.
+                  </Text>
+                </View>
+              )}
+              <View style={styles.btnRow}>
+                <Pressable
+                  onPress={() => { setAdding(false); setWardName(""); setBedCount(""); }}
+                  style={({ pressed }) => [styles.cancelBtn, { opacity: pressed ? 0.7 : 1 }]}
+                >
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleAddWard}
+                  style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.7 : 1 }]}
+                >
+                  <MaterialIcons name="add" size={18} color="#fff" />
+                  <Text style={styles.addBtnText}>Add Ward</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <Pressable
+              onPress={() => setAdding(true)}
+              style={({ pressed }) => [styles.addWardBtn, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <MaterialIcons name="add-circle-outline" size={20} color="#087E7B" />
+              <Text style={styles.addWardBtnText}>Add Ward</Text>
+            </Pressable>
+          )}
         </View>
-        <Text style={styles.statLabel}>Occupancy Rate</Text>
-        <View style={styles.occupancyBar}>
-          <View style={[styles.occupancyFill, { width: `${Math.min(facilityStats.occupancyRate, 100)}%` }]} />
+      )}
+
+      {/* No wards state */}
+      {units.length === 0 && (
+        <View style={styles.emptyCard}>
+          <MaterialIcons name="hotel" size={40} color="#D5E1DD" />
+          <Text style={styles.emptyTitle}>No Wards Set Up</Text>
+          <Text style={styles.emptyText}>
+            {isChief
+              ? "Tap \"Add Ward\" above to create a ward and specify the number of beds."
+              : "The Chief Doctor hasn't set up any wards yet."}
+          </Text>
         </View>
-        <Text style={styles.statValue}>{facilityStats.occupancyRate.toFixed(1)}%</Text>
+      )}
 
-        {facilityStats.isFull && (
-          <View style={styles.isFull}>
-            <MaterialIcons name="warning" size={20} color="#F44336" />
-            <Text style={styles.isFullText}>All beds are occupied. Check nearby hospitals.</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Units and Beds */}
+      {/* Ward cards with bed checkboxes */}
       {units.map((unit) => {
-        const unitStats = health.getUnitStats(unit.id);
-        const beds = health.getBedsByUnit(unit.id);
+        const beds = getBedsByUnit(unit.id);
+        const occupied = beds.filter((b) => b.status === "occupied").length;
+        const available = beds.length - occupied;
+        const pct = beds.length > 0 ? Math.round((occupied / beds.length) * 100) : 0;
 
         return (
-          <View key={unit.id} style={styles.unitCard}>
-            <Text style={styles.unitTitle}>{unit.name}</Text>
-            {unitStats && (
-              <>
-                <View style={styles.statsRow}>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>Total</Text>
-                    <Text style={styles.statValue}>{unitStats.totalBeds}</Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>Occupied</Text>
-                    <Text style={[styles.statValue, { color: "#F44336" }]}>{unitStats.occupiedBeds}</Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>Available</Text>
-                    <Text style={[styles.statValue, { color: "#4CAF50" }]}>{unitStats.availableBeds}</Text>
-                  </View>
-                </View>
-                <Text style={styles.statLabel}>Occupancy</Text>
-                <View style={styles.occupancyBar}>
-                  <View style={[styles.occupancyFill, { width: `${Math.min(unitStats.occupancyRate, 100)}%` }]} />
-                </View>
-                <Text style={styles.statValue}>{unitStats.occupancyRate.toFixed(1)}%</Text>
-              </>
-            )}
-
-            <Text style={[styles.statLabel, { marginTop: 16, marginBottom: 8 }]}>Beds</Text>
-            <View style={styles.bedsGrid}>
-              {beds.map((bed) => (
-                <TouchableOpacity
-                  key={bed.id}
-                  style={[
-                    styles.bedItem,
-                    bed.status === "available"
-                      ? styles.bedAvailable
-                      : bed.status === "occupied"
-                        ? styles.bedOccupied
-                        : styles.bedMaintenance,
-                  ]}
-                  onPress={() => handleBedPress(bed.id, bed.status)}
-                >
-                  <MaterialIcons
-                    name={bed.status === "available" ? "check-circle" : bed.status === "occupied" ? "person" : "build"}
-                    size={20}
-                    color={bed.status === "available" ? "#4CAF50" : bed.status === "occupied" ? "#F44336" : "#FF9800"}
-                    style={styles.bedIcon}
-                  />
-                  <Text style={styles.bedNumber}>{bed.bedNumber}</Text>
-                </TouchableOpacity>
-              ))}
+          <View key={unit.id} style={styles.wardCard}>
+            {/* Ward header */}
+            <View style={styles.wardHeader}>
+              <View>
+                <Text style={styles.wardName}>{unit.name}</Text>
+                <Text style={styles.wardStats}>
+                  {available} available · {occupied} occupied · {pct}% full
+                </Text>
+              </View>
+              <View style={[styles.occupancyBadge, { backgroundColor: pct >= 80 ? "#FDECEC" : "#EEF6F0" }]}>
+                <Text style={[styles.occupancyBadgeText, { color: pct >= 80 ? "#B42318" : "#198754" }]}>
+                  {pct}%
+                </Text>
+              </View>
             </View>
+
+            {/* Progress bar */}
+            <View style={styles.progressBg}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${pct}%` as any,
+                    backgroundColor: pct >= 80 ? "#B42318" : pct >= 50 ? "#9A5B00" : "#198754",
+                  },
+                ]}
+              />
+            </View>
+
+            {/* Bed checkboxes */}
+            <View style={styles.bedGrid}>
+              {beds.map((bed) => {
+                const isOccupied = bed.status === "occupied";
+                return (
+                  <Pressable
+                    key={bed.id}
+                    onPress={() => {
+                      if (!isChief) return; // read-only for non-chief
+                      if (isOccupied) {
+                        Alert.alert(
+                          "Release Bed",
+                          `Mark Bed ${bed.bedNumber} as available?`,
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            { text: "Release", onPress: () => releaseBed(bed.id) },
+                          ],
+                        );
+                      } else {
+                        Alert.alert(
+                          "Occupy Bed",
+                          `Mark Bed ${bed.bedNumber} as occupied?`,
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            { text: "Occupy", onPress: () => occupyBed(bed.id, "unassigned") },
+                          ],
+                        );
+                      }
+                    }}
+                    style={({ pressed }) => [
+                      styles.bedBox,
+                      isOccupied && styles.bedBoxOccupied,
+                      { opacity: pressed ? 0.7 : 1 },
+                    ]}
+                  >
+                    <View style={[styles.checkbox, isOccupied && styles.checkboxOccupied]}>
+                      {isOccupied && <MaterialIcons name="check" size={12} color="#fff" />}
+                    </View>
+                    <Text style={[styles.bedLabel, isOccupied && styles.bedLabelOccupied]}>
+                      {bed.bedNumber}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {!isChief && (
+              <Text style={styles.readOnlyNote}>
+                Only the Chief Doctor can change bed status.
+              </Text>
+            )}
           </View>
         );
       })}
-
-      {/* Nearby Hospitals Button */}
-      {facilityStats.isFull && (
-        <TouchableOpacity style={styles.button}>
-          <MaterialIcons name="local-hospital" size={20} color="white" />
-          <Text style={styles.buttonText}>View Nearby Hospitals with Beds</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Action Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
-            <Text style={styles.modalTitle}>
-              {actionType === "occupy" ? "Occupy Bed" : actionType === "release" ? "Release Bed" : actionType === "maintenance" ? "Maintenance" : actionType === "createUnit" ? "Create Unit" : "Create Bed"}
-            </Text>
-
-            {actionType === "occupy" && (
-              <>
-                <TextInput style={styles.input} placeholder="Patient ID" value={patientId} onChangeText={setPatientId} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Notes (optional)"
-                  value={notes}
-                  onChangeText={setNotes}
-                  multiline
-                  numberOfLines={3}
-                />
-              </>
-            )}
-
-            {actionType === "maintenance" && (
-              <TextInput
-                style={styles.input}
-                placeholder="Maintenance reason"
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                numberOfLines={3}
-              />
-            )}
-
-            {actionType === "createUnit" && (
-              <>
-                <TextInput style={styles.input} placeholder="Unit Name (e.g. ICU)" value={unitName} onChangeText={setUnitName} />
-                <TextInput style={styles.input} placeholder="Total Beds" value={unitTotalBeds} onChangeText={setUnitTotalBeds} keyboardType="number-pad" />
-              </>
-            )}
-
-            {actionType === "createBed" && (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Unit ID"
-                  value={selectedUnitId}
-                  onChangeText={setSelectedUnitId}
-                />
-                <TextInput style={styles.input} placeholder="Bed Number (e.g. GW-101)" value={bedNumber} onChangeText={setBedNumber} />
-              </>
-            )}
-
-            <TouchableOpacity style={[styles.actionButton, styles.actionButtonPrimary]} onPress={handleSubmitAction}>
-              <MaterialIcons name="check" size={20} color="white" />
-              <Text style={styles.actionButtonText}>Confirm</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonSecondary]}
-              onPress={() => {
-                setModalVisible(false);
-                setPatientId("");
-                setNotes("");
-                setUnitName("");
-                setUnitTotalBeds("");
-                setBedNumber("");
-                setSelectedUnitId("");
-                setSelectedBed(null);
-              }}
-            >
-              <MaterialIcons name="close" size={20} color="white" />
-              <Text style={styles.actionButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Summary Pill
+// ──────────────────────────────────────────────────────────────────────────────
+
+function SummaryPill({
+  icon,
+  value,
+  label,
+  color,
+}: {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  value: string;
+  label: string;
+  color: string;
+}) {
+  return (
+    <View style={[styles.pill, { borderColor: color + "44" }]}>
+      <MaterialIcons name={icon} size={18} color={color} />
+      <Text style={[styles.pillValue, { color }]}>{value}</Text>
+      <Text style={styles.pillLabel}>{label}</Text>
+    </View>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Styles
+// ──────────────────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#F4F7F5" },
+  content: { padding: 14, paddingBottom: 40, gap: 12 },
+  summaryRow: { flexDirection: "row", gap: 8 },
+  pill: {
+    flex: 1, alignItems: "center", backgroundColor: "#fff", borderRadius: 14,
+    borderWidth: 1.5, gap: 2, padding: 12,
+  },
+  pillValue: { fontSize: 22, fontWeight: "900" },
+  pillLabel: { color: "#6C817C", fontSize: 11, fontWeight: "700" },
+  card: {
+    backgroundColor: "#fff", borderRadius: 16, padding: 16,
+    shadowColor: "#18332F", shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
+  },
+  cardTitle: { color: "#18332F", fontSize: 17, fontWeight: "900", marginBottom: 12 },
+  inputLabel: { color: "#4A6560", fontSize: 12, fontWeight: "800", marginTop: 10, marginBottom: 5 },
+  input: {
+    backgroundColor: "#F7FAF9", borderColor: "#D5E1DD", borderRadius: 12, borderWidth: 1,
+    color: "#18332F", fontSize: 15, minHeight: 48, paddingHorizontal: 14,
+  },
+  previewBox: {
+    flexDirection: "row", alignItems: "flex-start", gap: 8,
+    backgroundColor: "#E6F5F3", borderRadius: 10, padding: 10, marginTop: 10,
+  },
+  previewText: { color: "#087E7B", fontSize: 12, fontWeight: "700", flex: 1, lineHeight: 17 },
+  btnRow: { flexDirection: "row", gap: 10, marginTop: 14 },
+  cancelBtn: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    borderRadius: 12, borderWidth: 1.5, borderColor: "#D5E1DD", minHeight: 46,
+  },
+  cancelBtnText: { color: "#6C817C", fontSize: 14, fontWeight: "800" },
+  addBtn: {
+    flex: 2, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6,
+    backgroundColor: "#087E7B", borderRadius: 12, minHeight: 46,
+  },
+  addBtnText: { color: "#fff", fontSize: 14, fontWeight: "900" },
+  addWardBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 48,
+  },
+  addWardBtnText: { color: "#087E7B", fontSize: 15, fontWeight: "900" },
+  emptyCard: {
+    backgroundColor: "#fff", borderRadius: 16, padding: 32, alignItems: "center", gap: 10,
+  },
+  emptyTitle: { color: "#18332F", fontSize: 17, fontWeight: "900" },
+  emptyText: { color: "#6C817C", fontSize: 13, fontWeight: "600", textAlign: "center", lineHeight: 19 },
+  wardCard: {
+    backgroundColor: "#fff", borderRadius: 16, padding: 14,
+    shadowColor: "#18332F", shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
+    gap: 10,
+  },
+  wardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  wardName: { color: "#18332F", fontSize: 16, fontWeight: "900" },
+  wardStats: { color: "#6C817C", fontSize: 12, fontWeight: "700", marginTop: 2 },
+  occupancyBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  occupancyBadgeText: { fontSize: 13, fontWeight: "900" },
+  progressBg: { height: 6, backgroundColor: "#E7EEEB", borderRadius: 999, overflow: "hidden" },
+  progressFill: { height: 6, borderRadius: 999 },
+  bedGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  bedBox: {
+    width: 44, alignItems: "center", gap: 3,
+    backgroundColor: "#EEF6F0", borderRadius: 8, borderWidth: 1, borderColor: "#C3DECA", padding: 6,
+  },
+  bedBoxOccupied: { backgroundColor: "#FDECEC", borderColor: "#F4ABAB" },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 5, borderWidth: 2, borderColor: "#198754",
+    alignItems: "center", justifyContent: "center",
+  },
+  checkboxOccupied: { backgroundColor: "#B42318", borderColor: "#B42318" },
+  bedLabel: { color: "#198754", fontSize: 10, fontWeight: "800" },
+  bedLabelOccupied: { color: "#B42318" },
+  readOnlyNote: { color: "#8CA19B", fontSize: 11, fontWeight: "600", marginTop: 4 },
+});

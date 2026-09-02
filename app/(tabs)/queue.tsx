@@ -1,5 +1,5 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { router } from "expo-router";
+
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { PrimaryButton, PriorityBadge, SyncPill, LiveQueueBanner, commonStyles } from "@/components/health/ui";
 import { useHealth } from "@/lib/health/store";
@@ -11,7 +11,9 @@ const facilityId = Number(process.env.EXPO_PUBLIC_FACILITY_ID ?? 0);
 export default function QueueScreen() {
   const { state, t, updateQueueStatus, priorityReasonLabel } = useHealth();
   const { role } = useUserAuth();
-  const isPatient = role === "patient";
+  // Doctors and chief doctor see full clinical view
+  const isClinical = role === "doctor" || role === "chief_doctor";
+  const isStaff = isClinical || role === "asha_worker" || role === "receptionist";
   const entries = sortQueue(state.queue.filter((item) => item.status !== "completed"));
   const callNext = () => { const next = entries.find((entry) => entry.status === "waiting"); if (next) updateQueueStatus(next.id, "called"); };
 
@@ -32,8 +34,7 @@ export default function QueueScreen() {
                 : "Priority first, then first-in-first-out within each category."}
             </Text>
 
-            {/* Call Next — only for clinical staff */}
-            {!isPatient && (
+            {isStaff && (
               <PrimaryButton
                 label={t("callNext")}
                 icon="campaign"
@@ -74,15 +75,20 @@ export default function QueueScreen() {
           // Full clinical view for doctors / health workers
           return (
             <Pressable
-              onPress={() => router.push(`/patient/${patient.id}` as never)}
-              style={({ pressed }) => [commonStyles.card, styles.card, { opacity: pressed ? 0.72 : 1 }]}
+              onPress={() => {}}
+              style={({ pressed }) => [commonStyles.card, styles.card, { opacity: pressed ? 0.85 : 1 }]}
             >
               <View style={styles.topRow}>
                 <Text style={styles.token}>#{String(index + 1).padStart(2, "0")}</Text>
                 <PriorityBadge priority={item.priority} compact />
               </View>
               <Text style={styles.name}>{patient.name}</Text>
-              <Text style={commonStyles.body}>{patient.localId} · {item.service}</Text>
+              <Text style={commonStyles.body}>
+                {patient.age}y · {patient.sex} · {patient.localId}
+              </Text>
+              {patient.disease ? (
+                <Text style={styles.disease}>🩺 {patient.disease}</Text>
+              ) : null}
               <Text style={styles.reason}>{priorityReasonLabel(item.priorityReason)}</Text>
               <View style={styles.footer}>
                 <View>
@@ -91,13 +97,21 @@ export default function QueueScreen() {
                     <SyncPill state={item.syncState} />
                   </View>
                 </View>
-                <Pressable
-                  onPress={() => updateQueueStatus(item.id, item.status === "waiting" ? "called" : "completed")}
-                  style={({ pressed }) => [styles.action, { opacity: pressed ? 0.65 : 1 }]}
-                >
-                  <Text style={styles.actionText}>{item.status === "waiting" ? t("callNext") : "Complete"}</Text>
-                  <MaterialIcons name={item.status === "waiting" ? "campaign" : "check-circle"} size={17} color="#087E7B" />
-                </Pressable>
+                {isClinical && (
+                  <Pressable
+                    onPress={() => updateQueueStatus(item.id, item.status === "waiting" ? "called" : "completed")}
+                    style={({ pressed }) => [styles.action, { opacity: pressed ? 0.65 : 1 }]}
+                  >
+                    <Text style={styles.actionText}>
+                      {item.status === "waiting" ? "Call Patient" : "Mark Seen ✓"}
+                    </Text>
+                    <MaterialIcons
+                      name={item.status === "waiting" ? "campaign" : "check-circle"}
+                      size={17}
+                      color="#087E7B"
+                    />
+                  </Pressable>
+                )}
               </View>
             </Pressable>
           );
@@ -120,6 +134,7 @@ const styles = StyleSheet.create({
   topRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   token: { color: "#6C817C", fontSize: 12, fontWeight: "900" },
   name: { color: "#18332F", fontSize: 18, fontWeight: "900", marginTop: 10 },
+  disease: { color: "#087E7B", fontSize: 12, fontWeight: "700", marginTop: 4 },
   reason: { color: "#B66A00", fontSize: 12, fontWeight: "800", marginTop: 6 },
   footer: { alignItems: "flex-end", borderTopColor: "#E7EEEB", borderTopWidth: 1, flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingTop: 10 },
   action: { alignItems: "center", flexDirection: "row", gap: 5, minHeight: 32 },

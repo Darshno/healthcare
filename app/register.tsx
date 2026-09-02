@@ -1,77 +1,267 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { router } from "expo-router";
 import { useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { PrimaryButton, commonStyles } from "@/components/health/ui";
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useHealth } from "@/lib/health/store";
-import type { CareTag, Patient, PriorityInput } from "@/lib/health/types";
+import type { Patient } from "@/lib/health/types";
 
-const services = ["General OPD", "Maternal care", "Child care", "Chronic care"];
-const risks: { key: keyof PriorityInput; label: string; hint: string }[] = [
-  { key: "maternalDanger", label: "Maternal danger sign", hint: "Escalates as emergency" },
-  { key: "childDanger", label: "Child danger sign", hint: "Escalates as emergency" },
-  { key: "vitalConcern", label: "Vital-sign concern", hint: "Urgent clinical review" },
-  { key: "chronicReview", label: "Chronic-care review", hint: "Priority care pathway" },
+type Sex = Patient["sex"];
+
+const SEX_OPTIONS: { value: Sex; label: string }[] = [
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "other", label: "Other" },
 ];
 
-export default function RegisterPatientScreen() {
-  const { registerPatient, t } = useHealth();
-  const [name, setName] = useState("");
-  const [age, setAge] = useState("");
-  const [contact, setContact] = useState("");
-  const [sex, setSex] = useState<Patient["sex"]>("female");
-  const [service, setService] = useState("General OPD");
-  const [careTags, setCareTags] = useState<CareTag[]>(["general"]);
-  const [priorityInput, setPriorityInput] = useState<PriorityInput>({});
+const TRIAGE_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
+  emergency: { bg: "#FDECEC", fg: "#B42318", label: "🚨 Emergency" },
+  urgent: { bg: "#FFF4E5", fg: "#9A5B00", label: "⚡ Urgent" },
+  priority: { bg: "#EAF4FF", fg: "#2369A5", label: "📋 Priority" },
+  routine: { bg: "#EEF6F0", fg: "#198754", label: "✅ Routine" },
+};
 
-  const toggleTag = (tag: CareTag) => setCareTags((tags) => tags.includes(tag) ? tags.filter((item) => item !== tag) : [...tags.filter((item) => item !== "general"), tag]);
-  const toggleRisk = (key: keyof PriorityInput) => setPriorityInput((previous) => ({ ...previous, [key]: !previous[key] }));
+function inferTriagePreview(disease: string) {
+  const d = disease.toLowerCase();
+  if (
+    d.includes("emergency") || d.includes("chest pain") ||
+    d.includes("breathing") || d.includes("unconscious") ||
+    d.includes("bleeding") || d.includes("seizure") ||
+    d.includes("stroke") || d.includes("heart attack")
+  ) return "emergency";
+  if (
+    d.includes("fever") || d.includes("pain") || d.includes("infection") ||
+    d.includes("fracture") || d.includes("vomit") || d.includes("diarrhea") ||
+    d.includes("diarrhoea") || d.includes("wound") || d.includes("burn")
+  ) return "urgent";
+  if (
+    d.includes("diabetes") || d.includes("bp") || d.includes("blood pressure") ||
+    d.includes("chronic") || d.includes("follow up") || d.includes("follow-up")
+  ) return "priority";
+  return "routine";
+}
+
+export default function RegisterPatientScreen() {
+  const { registerPatient } = useHealth();
+
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [age, setAge] = useState("");
+  const [sex, setSex] = useState<Sex>("female");
+  const [disease, setDisease] = useState("");
+
+  const triageLevel = disease.trim() ? inferTriagePreview(disease) : "routine";
+  const triageColor = TRIAGE_COLORS[triageLevel];
 
   const save = () => {
-    if (!name.trim() || !age.trim() || Number.isNaN(Number(age))) {
-      Alert.alert("Complete patient details", "Enter a patient name and valid age before adding to the queue.");
+    const trimmedName = name.trim();
+    const parsedAge = Number(age);
+
+    if (!trimmedName) {
+      Alert.alert("Missing Info", "Please enter the patient's name.");
       return;
     }
-    const patientId = registerPatient({ name, age: Number(age), sex, contact, careTags, service, priorityInput });
-    router.replace(`/patient/${patientId}` as never);
+    if (!age.trim() || Number.isNaN(parsedAge) || parsedAge <= 0 || parsedAge > 130) {
+      Alert.alert("Missing Info", "Please enter a valid age.");
+      return;
+    }
+
+    const patientId = registerPatient({
+      name: trimmedName,
+      age: parsedAge,
+      sex,
+      contact: phone.trim() || undefined,
+      disease: disease.trim() || undefined,
+    });
+
+    if (!patientId) return; // Permission denied (store shows alert)
+
+    // Navigate to queue — never leave a blank screen
+    router.replace("/(tabs)/queue" as never);
   };
 
   return (
-    <View style={commonStyles.screen}>
+    <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={({ pressed }) => [styles.back, { opacity: pressed ? 0.55 : 1 }]}>
-          <MaterialIcons name="arrow-back" size={21} color="#18332F" /><Text style={styles.backText}>Back</Text>
+        {/* Header */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          onPress={() => router.back()}
+          style={({ pressed }) => [styles.back, { opacity: pressed ? 0.55 : 1 }]}
+        >
+          <MaterialIcons name="arrow-back" size={21} color="#18332F" />
+          <Text style={styles.backText}>Back</Text>
         </Pressable>
-        <Text style={commonStyles.eyebrow}>Arrival workflow</Text>
-        <Text style={commonStyles.title}>{t("registerPatient")}</Text>
-        <Text style={[commonStyles.body, { marginTop: 6 }]}>Create a minimal local record, check the care pathway, then add the patient to the service queue.</Text>
 
-        <Section label={t("name")}><TextInput value={name} onChangeText={setName} placeholder="e.g. Meera Patel" placeholderTextColor="#8CA19B" style={styles.input} autoFocus /></Section>
-        <View style={styles.twoColumns}>
-          <Section label={t("age")} style={styles.flex}><TextInput value={age} onChangeText={setAge} placeholder="Years" placeholderTextColor="#8CA19B" keyboardType="numeric" style={styles.input} /></Section>
-          <Section label={t("contact")} style={styles.flex}><TextInput value={contact} onChangeText={setContact} placeholder="Optional" placeholderTextColor="#8CA19B" keyboardType="phone-pad" style={styles.input} /></Section>
+        <View style={styles.titleRow}>
+          <View style={styles.titleIcon}>
+            <MaterialIcons name="person-add" size={22} color="#087E7B" />
+          </View>
+          <View>
+            <Text style={styles.eyebrow}>Patient Registration</Text>
+            <Text style={styles.title}>Register New Patient</Text>
+          </View>
         </View>
 
-        <Section label="Sex"><View style={styles.choiceRow}>{(["female", "male", "other"] as const).map((option) => <Choice key={option} label={option[0].toUpperCase() + option.slice(1)} active={sex === option} onPress={() => setSex(option)} />)}</View></Section>
-        <Section label={t("service")}><View style={styles.wrap}>{services.map((option) => <Choice key={option} label={option} active={service === option} onPress={() => setService(option)} />)}</View></Section>
-        <Section label="Care pathway"><View style={styles.wrap}>{(["maternal", "child", "chronic", "general"] as CareTag[]).map((tag) => <Choice key={tag} label={t(tag)} active={careTags.includes(tag)} onPress={() => toggleTag(tag)} />)}</View></Section>
+        {/* Patient Name */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Patient Name *</Text>
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            placeholder="e.g. Meera Devi"
+            placeholderTextColor="#8CA19B"
+            style={styles.input}
+            autoFocus
+          />
+        </View>
 
-        <View style={styles.riskNotice}><MaterialIcons name="health-and-safety" size={18} color="#2369A5" /><Text style={styles.riskText}>{t("triageSupport")}</Text></View>
-        <Section label="Priority screening">
-          <View style={styles.riskStack}>{risks.map((risk) => <Pressable key={risk.key} onPress={() => toggleRisk(risk.key)} style={({ pressed }) => [styles.riskChoice, priorityInput[risk.key] && styles.riskChoiceActive, { opacity: pressed ? 0.72 : 1 }]}><View style={[styles.check, priorityInput[risk.key] && styles.checkActive]}>{priorityInput[risk.key] && <MaterialIcons name="check" size={15} color="#FFFFFF" />}</View><View style={styles.flex}><Text style={styles.riskTitle}>{risk.label}</Text><Text style={commonStyles.tiny}>{risk.hint}</Text></View></Pressable>)}</View>
-        </Section>
-        <PrimaryButton label={t("addToQueue")} icon="person-add" onPress={save} />
+        {/* Phone + Age row */}
+        <View style={styles.row}>
+          <View style={[styles.field, styles.flex]}>
+            <Text style={styles.label}>Phone Number</Text>
+            <TextInput
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Optional"
+              placeholderTextColor="#8CA19B"
+              keyboardType="phone-pad"
+              style={styles.input}
+            />
+          </View>
+          <View style={[styles.field, styles.flex]}>
+            <Text style={styles.label}>Age (years) *</Text>
+            <TextInput
+              value={age}
+              onChangeText={setAge}
+              placeholder="e.g. 34"
+              placeholderTextColor="#8CA19B"
+              keyboardType="numeric"
+              style={styles.input}
+            />
+          </View>
+        </View>
+
+        {/* Sex */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Sex *</Text>
+          <View style={styles.choiceRow}>
+            {SEX_OPTIONS.map((opt) => (
+              <Pressable
+                key={opt.value}
+                onPress={() => setSex(opt.value)}
+                style={({ pressed }) => [
+                  styles.choice,
+                  sex === opt.value && styles.choiceActive,
+                  { opacity: pressed ? 0.7 : 1, flex: 1 },
+                ]}
+              >
+                <Text style={[styles.choiceText, sex === opt.value && styles.choiceTextActive]}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* Symptoms / Chief Complaint */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Symptoms / Chief Complaint</Text>
+          <TextInput
+            value={disease}
+            onChangeText={setDisease}
+            placeholder="e.g. fever, chest pain, diabetes follow-up"
+            placeholderTextColor="#8CA19B"
+            style={[styles.input, styles.textArea]}
+            multiline
+            numberOfLines={3}
+          />
+          <Text style={styles.hint}>
+            This helps determine triage priority automatically.
+          </Text>
+        </View>
+
+        {/* Triage Preview */}
+        {disease.trim() ? (
+          <View style={[styles.triagePreview, { backgroundColor: triageColor.bg }]}>
+            <MaterialIcons name="health-and-safety" size={18} color={triageColor.fg} />
+            <View>
+              <Text style={[styles.triageLabel, { color: triageColor.fg }]}>
+                Auto Triage: {triageColor.label}
+              </Text>
+              <Text style={[styles.triageSub, { color: triageColor.fg }]}>
+                Based on symptoms entered above
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={[styles.triagePreview, { backgroundColor: TRIAGE_COLORS.routine.bg }]}>
+            <MaterialIcons name="info-outline" size={18} color={TRIAGE_COLORS.routine.fg} />
+            <Text style={[styles.triageLabel, { color: TRIAGE_COLORS.routine.fg }]}>
+              Auto Triage: ✅ Routine (no symptoms entered)
+            </Text>
+          </View>
+        )}
+
+        {/* Submit */}
+        <Pressable
+          onPress={save}
+          style={({ pressed }) => [styles.submitBtn, { opacity: pressed ? 0.85 : 1 }]}
+          accessibilityRole="button"
+        >
+          <MaterialIcons name="add-circle" size={20} color="#fff" />
+          <Text style={styles.submitText}>Add Patient to Queue</Text>
+        </Pressable>
       </ScrollView>
     </View>
   );
 }
 
-function Section({ label, children, style }: { label: string; children: React.ReactNode; style?: object }) { return <View style={[styles.section, style]}><Text style={styles.label}>{label}</Text>{children}</View>; }
-function Choice({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) { return <Pressable onPress={onPress} style={({ pressed }) => [styles.choice, active && styles.choiceActive, { opacity: pressed ? 0.7 : 1 }]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{label}</Text></Pressable>; }
-
 const styles = StyleSheet.create({
-  content: { padding: 16, paddingBottom: 38 }, back: { alignItems: "center", alignSelf: "flex-start", flexDirection: "row", gap: 6, marginBottom: 20, minHeight: 32 }, backText: { color: "#18332F", fontSize: 14, fontWeight: "800" },
-  section: { marginTop: 20 }, label: { color: "#18332F", fontSize: 13, fontWeight: "800", marginBottom: 8 }, input: { backgroundColor: "#FFFFFF", borderColor: "#D5E1DD", borderRadius: 13, borderWidth: 1, color: "#18332F", fontSize: 16, minHeight: 50, paddingHorizontal: 14 },
-  twoColumns: { flexDirection: "row", gap: 12 }, flex: { flex: 1 }, choiceRow: { flexDirection: "row", gap: 8 }, wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, choice: { backgroundColor: "#FFFFFF", borderColor: "#D5E1DD", borderRadius: 999, borderWidth: 1, minHeight: 37, paddingHorizontal: 13, justifyContent: "center" }, choiceActive: { backgroundColor: "#E6F5F3", borderColor: "#087E7B" }, choiceText: { color: "#54716B", fontSize: 13, fontWeight: "700" }, choiceTextActive: { color: "#087E7B" },
-  riskNotice: { alignItems: "flex-start", backgroundColor: "#EAF4FF", borderRadius: 13, flexDirection: "row", gap: 9, marginTop: 24, padding: 12 }, riskText: { color: "#2369A5", flex: 1, fontSize: 12, fontWeight: "700", lineHeight: 18 }, riskStack: { gap: 9 }, riskChoice: { alignItems: "center", backgroundColor: "#FFFFFF", borderColor: "#D5E1DD", borderRadius: 14, borderWidth: 1, flexDirection: "row", gap: 10, minHeight: 64, padding: 12 }, riskChoiceActive: { backgroundColor: "#FFF8EE", borderColor: "#B66A00" }, check: { alignItems: "center", borderColor: "#94AAA4", borderRadius: 6, borderWidth: 1.5, height: 22, justifyContent: "center", width: 22 }, checkActive: { backgroundColor: "#B66A00", borderColor: "#B66A00" }, riskTitle: { color: "#18332F", fontSize: 14, fontWeight: "800", marginBottom: 2 },
+  screen: { flex: 1, backgroundColor: "#F4F7F5" },
+  content: { padding: 16, paddingBottom: 40, gap: 4 },
+  back: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 16, alignSelf: "flex-start", minHeight: 32 },
+  backText: { color: "#18332F", fontSize: 14, fontWeight: "800" },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 18 },
+  titleIcon: { width: 46, height: 46, borderRadius: 14, backgroundColor: "#E6F5F3", alignItems: "center", justifyContent: "center" },
+  eyebrow: { color: "#087E7B", fontSize: 11, fontWeight: "900", letterSpacing: 0.8, textTransform: "uppercase" },
+  title: { color: "#18332F", fontSize: 20, fontWeight: "900" },
+  field: { marginTop: 14 },
+  label: { color: "#18332F", fontSize: 13, fontWeight: "800", marginBottom: 7 },
+  input: {
+    backgroundColor: "#FFFFFF", borderColor: "#D5E1DD", borderRadius: 13,
+    borderWidth: 1, color: "#18332F", fontSize: 16, minHeight: 50, paddingHorizontal: 14,
+  },
+  textArea: { minHeight: 80, paddingTop: 12, textAlignVertical: "top" },
+  hint: { color: "#6C817C", fontSize: 11, fontWeight: "600", marginTop: 5 },
+  row: { flexDirection: "row", gap: 12 },
+  flex: { flex: 1 },
+  choiceRow: { flexDirection: "row", gap: 8 },
+  choice: {
+    backgroundColor: "#FFFFFF", borderColor: "#D5E1DD", borderRadius: 999,
+    borderWidth: 1, minHeight: 40, paddingHorizontal: 12, justifyContent: "center", alignItems: "center",
+  },
+  choiceActive: { backgroundColor: "#E6F5F3", borderColor: "#087E7B" },
+  choiceText: { color: "#54716B", fontSize: 14, fontWeight: "700" },
+  choiceTextActive: { color: "#087E7B", fontWeight: "900" },
+  triagePreview: {
+    flexDirection: "row", alignItems: "flex-start", gap: 10,
+    borderRadius: 13, padding: 12, marginTop: 10,
+  },
+  triageLabel: { fontSize: 13, fontWeight: "800" },
+  triageSub: { fontSize: 11, fontWeight: "600", marginTop: 2, opacity: 0.8 },
+  submitBtn: {
+    alignItems: "center", backgroundColor: "#087E7B", borderRadius: 14,
+    flexDirection: "row", gap: 10, justifyContent: "center",
+    minHeight: 54, marginTop: 22, paddingHorizontal: 18,
+  },
+  submitText: { color: "#FFFFFF", fontSize: 16, fontWeight: "900" },
 });

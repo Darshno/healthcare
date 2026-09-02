@@ -14,7 +14,14 @@ export default function TabLayout() {
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
   const tabBarHeight = 56 + bottomPadding;
 
-  const isPatient = role === "patient";
+  // Role-based tab visibility
+  const isChief = role === "chief_doctor";
+  const isDoctor = role === "doctor";
+  const isAsha = role === "asha_worker";
+  const isReceptionist = role === "receptionist";
+
+  // Beds only visible to chief doctor; Medicines visible to all
+  const showBeds = isChief;
 
   return (
     <Tabs
@@ -22,54 +29,28 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.tint,
         headerShown: false,
         tabBarButton: HapticTab,
-
-        tabBarStyle: isPatient
-          ? { display: "none" }
-          : {
-              paddingTop: 8,
-              paddingBottom: bottomPadding,
-              height: tabBarHeight,
-              backgroundColor: colors.background,
-              borderTopColor: colors.border,
-              borderTopWidth: 0.5,
-            },
+        tabBarStyle: {
+          paddingTop: 8,
+          paddingBottom: bottomPadding,
+          height: tabBarHeight,
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
+          borderTopWidth: 0.5,
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: "Dashboard",
-          href: isPatient ? null : undefined,
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="patients"
-        options={{
-          title: "Patients",
-          href: isPatient ? null : undefined,
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="person.2.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="queue"
         options={{
-          title: isPatient ? "Live Queue" : "Queue",
+          title: "Queue",
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="list.bullet" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="referrals"
-        options={{
-          title: isPatient ? "Hospitals" : "Referrals",
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="arrow.triangle.2.circlepath" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: isPatient ? "Care Chat" : "Staff Chat",
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="bubble.left.and.bubble.right.fill" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -82,12 +63,35 @@ export default function TabLayout() {
       <Tabs.Screen
         name="beds"
         options={{
-          title: "Bed Tracker",
-          href: isPatient ? null : undefined,
+          title: "Wards",
+          href: showBeds ? undefined : null,
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="bed.double.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="patients"
+        options={{
+          title: "Patients",
+          href: null, // Hidden — managed via queue
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="person.2.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="referrals"
+        options={{
+          title: "Referrals",
+          href: null, // Hidden from main tabs for now
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="arrow.triangle.2.circlepath" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: "Staff Chat",
+          href: null, // Hidden from main tabs for now
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="bubble.left.and.bubble.right.fill" color={color} />,
         }}
       />
     </Tabs>
   );
 }
-

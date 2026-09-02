@@ -3,11 +3,14 @@ import { useState } from "react";
 import { Alert, FlatList, Pressable, StyleSheet, Text, View, Modal, TextInput, TouchableOpacity } from "react-native";
 import { SyncPill, commonStyles } from "@/components/health/ui";
 import { useHealth } from "@/lib/health/store";
+import { useUserAuth } from "@/lib/health/DoctorAuthContext";
 import type { Medicine } from "@/lib/health/types";
 import { trpc } from "@/lib/trpc";
 
 export default function MedicinesScreen() {
   const { state, t, recordInventoryTransaction } = useHealth();
+  const { role } = useUserAuth();
+  const isAshaWorker = role === "asha_worker";
   const [selected, setSelected] = useState<Medicine | undefined>();
 
   // Add Medicine State
@@ -70,14 +73,22 @@ export default function MedicinesScreen() {
             <Text style={commonStyles.eyebrow}>Pharmacy workflow</Text>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
               <Text style={commonStyles.title}>{t("medicines")}</Text>
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => setIsAddModalVisible(true)}
-              >
-                <MaterialIcons name="add-circle" size={24} color="#087E7B" />
-                <Text style={styles.addButtonText}>Add Medicine</Text>
-              </TouchableOpacity>
+              {isAshaWorker && (
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => setIsAddModalVisible(true)}
+                >
+                  <MaterialIcons name="add-circle" size={24} color="#087E7B" />
+                  <Text style={styles.addButtonText}>Add Medicine</Text>
+                </TouchableOpacity>
+              )}
             </View>
+            {!isAshaWorker && (
+              <View style={styles.readOnlyNote}>
+                <MaterialIcons name="info-outline" size={15} color="#2369A5" />
+                <Text style={styles.readOnlyNoteText}>Doctors can view stock. Only ASHA Workers can update it.</Text>
+              </View>
+            )}
             <Text style={[commonStyles.body, { marginBottom: 15 }]}>
               Transaction-based availability. Do not treat last-synchronised stock as a guaranteed supply.
             </Text>
@@ -117,7 +128,7 @@ export default function MedicinesScreen() {
                 {item.syncState === "synced" ? t("stockAvailable") : t("staleStock")}
               </Text>
             </View>
-            {selected?.id === item.id && (
+            {selected?.id === item.id && isAshaWorker && (
               <View style={styles.actions}>
                 <Pressable
                   onPress={() => adjust(item, "receipt")}
@@ -232,6 +243,8 @@ const styles = StyleSheet.create({
   stockActionText: { color: "#087E7B", fontSize: 12, fontWeight: "900" },
   addButton: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#E6F5F3", padding: 8, borderRadius: 8, borderWidth: 1, borderColor: "#BEE6E2" },
   addButtonText: { color: "#087E7B", fontSize: 12, fontWeight: "900" },
+  readOnlyNote: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#EAF4FF", borderRadius: 10, padding: 10, marginBottom: 10 },
+  readOnlyNoteText: { color: "#2369A5", fontSize: 12, fontWeight: "700", flex: 1 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.5)", justifyContent: "flex-end" },
   modal: { backgroundColor: "white", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: "80%" },
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 16, color: "#1a1a1a" },
