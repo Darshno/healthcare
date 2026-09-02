@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { useDoctorAuth } from "@/lib/health/DoctorAuthContext";
-import { type DoctorProfile, type DoctorSpecialization, PRESET_DEFAULT_PIN } from "@/lib/health/doctorAuth";
+import { type DoctorProfile, type DoctorSpecialization } from "@/lib/health/doctorAuth";
 import { useRef } from "react";
 
 const SPECIALIZATIONS: DoctorSpecialization[] = [
@@ -42,7 +42,7 @@ export function DoctorAuthScreen() {
   const [fullName, setFullName] = useState("");
   const [doctorId, setDoctorId] = useState("");
   const [specialization, setSpecialization] = useState<DoctorSpecialization>("General Medicine (MBBS)");
-  const [facilityName, setFacilityName] = useState("Nandipur Primary Health Centre");
+  const [facilityName, setFacilityName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [signupPasscode, setSignupPasscode] = useState("");
@@ -77,6 +77,14 @@ export function DoctorAuthScreen() {
       setError("Please enter a Medical Registration No. or Staff ID.");
       return;
     }
+    if (!facilityName.trim()) {
+      setError("Please enter the facility name.");
+      return;
+    }
+    if (!signupPasscode.trim()) {
+      setError("Please enter a security PIN/Password.");
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -84,26 +92,17 @@ export function DoctorAuthScreen() {
         name: fullName.trim(),
         doctorId: doctorId.trim(),
         specialization,
-        facilityName: facilityName.trim() || "Nandipur Primary Health Centre",
+        facilityName: facilityName.trim(),
         facilityId: 1,
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
-        passcode: signupPasscode.trim() || undefined,
+        passcode: signupPasscode.trim(),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Profile creation failed.");
     } finally {
       setBusy(false);
     }
-  };
-
-  // Preset card tapped → pre-fill the ID and move focus to password
-  const handleQuickSelect = (preset: DoctorProfile) => {
-    setLoginId(preset.doctorId);
-    setPasscode("");
-    setError(null);
-    // Small delay so state updates before focusing
-    setTimeout(() => passwordInputRef.current?.focus(), 50);
   };
 
   return (
@@ -121,7 +120,7 @@ export function DoctorAuthScreen() {
             </View>
           </View>
 
-          <Text style={styles.facilitySubtitle}>Nandipur Primary Health Centre</Text>
+          <Text style={styles.facilitySubtitle}>Clinician Portal</Text>
           <Text style={styles.portalTitle}>Doctor & Staff Portal</Text>
           <Text style={styles.portalDescription}>
             Medical records, patient queues, pharmacy stocks, and referrals are confidential. Please sign in or create your doctor profile to proceed.
@@ -237,42 +236,6 @@ export function DoctorAuthScreen() {
               )}
             </Pressable>
 
-            {/* Quick Demo Presets */}
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or select a staff profile</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <View style={styles.presetHint}>
-              <MaterialIcons name="info-outline" size={14} color="#087E7B" />
-              <Text style={styles.presetHintText}>
-                Demo PIN for all preset doctors: <Text style={styles.presetHintPin}>{PRESET_DEFAULT_PIN}</Text>
-              </Text>
-            </View>
-
-            <View style={styles.presetList}>
-              {registeredDoctors.slice(0, 3).map((doc: any) => (
-                <Pressable
-                  key={doc.id}
-                  onPress={() => handleQuickSelect(doc)}
-                  disabled={busy}
-                  style={({ pressed }) => [styles.presetCard, { opacity: pressed ? 0.7 : 1 }]}
-                >
-                  <View style={styles.presetAvatar}>
-                    <Text style={styles.presetAvatarText}>
-                      {doc.name.replace("Dr. ", "").charAt(0)}
-                    </Text>
-                  </View>
-                  <View style={styles.presetInfo}>
-                    <Text style={styles.presetName}>{doc.name}</Text>
-                    <Text style={styles.presetSub}>{doc.specialization} · {doc.doctorId}</Text>
-                  </View>
-                  <MaterialIcons name="keyboard-tab" size={18} color="#087E7B" />
-                </Pressable>
-              ))}
-            </View>
-
             <Pressable onPress={() => setTab("signup")} style={styles.switchLink}>
               <Text style={styles.switchLinkText}>
                 New doctor at this facility? <Text style={styles.switchLinkBold}>Create Profile</Text>
@@ -335,13 +298,13 @@ export function DoctorAuthScreen() {
               })}
             </View>
 
-            <Text style={styles.inputLabel}>Primary Health Centre / Facility</Text>
+            <Text style={styles.inputLabel}>Primary Health Centre / Facility *</Text>
             <View style={styles.inputWrapper}>
               <MaterialIcons name="apartment" size={20} color="#54716B" style={styles.inputIcon} />
               <TextInput
                 value={facilityName}
                 onChangeText={setFacilityName}
-                placeholder="e.g. Nandipur Primary Health Centre"
+                placeholder="Enter Hospital/Clinic Name"
                 placeholderTextColor="#8CA19B"
                 style={styles.textInput}
               />
@@ -380,7 +343,7 @@ export function DoctorAuthScreen() {
               </View>
             </View>
 
-            <Text style={styles.inputLabel}>Security PIN / Password (Optional)</Text>
+            <Text style={styles.inputLabel}>Security PIN / Password *</Text>
             <View style={styles.inputWrapper}>
               <MaterialIcons name="lock-outline" size={20} color="#54716B" style={styles.inputIcon} />
               <TextInput

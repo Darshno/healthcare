@@ -94,7 +94,20 @@ export const bedOccupancy = pgTable("bed_occupancy", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const medicines = pgTable("medicines", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  name: varchar("name", { length: 255 }).notNull(),
+  localName: varchar("localName", { length: 255 }),
+  category: varchar("category", { length: 64 }).notNull(),
+  unit: varchar("unit", { length: 32 }).notNull(),
+  minimumStock: integer("minimumStock").default(0).notNull(),
+  isGovtSupply: boolean("isGovtSupply").default(true).notNull(),
+  pricePerUnit: integer("pricePerUnit").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type HospitalUnit = typeof hospitalUnits.$inferSelect;
+
 export type InsertHospitalUnit = typeof hospitalUnits.$inferInsert;
 export type Bed = typeof beds.$inferSelect;
 export type InsertBed = typeof beds.$inferInsert;

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Modal, TextInput, StyleSheet } from "react-native";
 import { useHealth } from "@/lib/health/store";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { trpc } from "@/lib/trpc";
 
 const styles = StyleSheet.create({
   container: {
@@ -203,9 +204,33 @@ export function BedManagementScreen({ facilityId }: BedManagementScreenProps) {
   const health = useHealth();
   const [selectedBed, setSelectedBed] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [actionType, setActionType] = useState<"occupy" | "release" | "maintenance">("occupy");
+  const [actionType, setActionType] = useState<"occupy" | "release" | "maintenance" | "createUnit" | "createBed">("occupy");
   const [patientId, setPatientId] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Unit Creation State
+  const [unitName, setUnitName] = useState("");
+  const [unitType, setUnitType] = useState("general_ward");
+  const [unitTotalBeds, setUnitTotalBeds] = useState("");
+
+  // Bed Creation State
+  const [selectedUnitId, setSelectedUnitId] = useState("");
+  const [bedNumber, setBedNumber] = useState("");
+
+  const createUnitMutation = trpc.beds.createUnit.useMutation({
+    onSuccess: () => {
+      setModalVisible(false);
+      setUnitName("");
+      setUnitTotalBeds("");
+    },
+  });
+
+  const createBedMutation = trpc.beds.createBed.useMutation({
+    onSuccess: () => {
+      setModalVisible(false);
+      setBedNumber("");
+    },
+  });
 
   const facilityStats = health.getFacilityStats(facilityId);
   const units = health.getFacilityUnits(facilityId);
@@ -223,7 +248,7 @@ export function BedManagementScreen({ facilityId }: BedManagementScreenProps) {
   };
 
   const handleSubmitAction = () => {
-    if (!selectedBed) return;
+    if (!selectedBed && actionType !== "createUnit" && actionType !== "createBed") return;
 
     switch (actionType) {
       case "occupy":
@@ -231,13 +256,28 @@ export function BedManagementScreen({ facilityId }: BedManagementScreenProps) {
           alert("Please enter patient ID");
           return;
         }
-        health.occupyBed(selectedBed, patientId, notes);
+        health.occupyBed(selectedBed!, patientId, notes);
         break;
       case "release":
-        health.releaseBed(selectedBed);
+        health.releaseBed(selectedBed!);
         break;
       case "maintenance":
-        health.setMaintenanceBed(selectedBed, true, notes);
+        health.setMaintenanceBed(selectedBed!, true, notes);
+        break;
+      case "createUnit":
+        createUnitMutation.mutate({
+          facilityId: parseInt(facilityId),
+          name: unitName,
+          type: unitType as any,
+          totalBeds: parseInt(unitTotalBeds),
+          description: "",
+        });
+        break;
+      case "createBed":
+        createBedMutation.mutate({
+          unitId: parseInt(selectedUnitId),
+          bedNumber: bedNumber,
+        });
         break;
     }
 
@@ -261,7 +301,31 @@ export function BedManagementScreen({ facilityId }: BedManagementScreenProps) {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.header}>Bed Management</Text>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <Text style={styles.header}>Bed Management</Text>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => {
+              setActionType("createUnit");
+              setModalVisible(true);
+            }}
+          >
+            <MaterialIcons name="add-circle" size={18} color="white" />
+            <Text style={styles.buttonText}>Unit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => {
+              setActionType("createBed");
+              setModalVisible(true);
+            }}
+          >
+            <MaterialIcons name="add-box" size={18} color="white" />
+            <Text style={styles.buttonText}>Bed</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Facility Overview */}
       <View style={styles.unitCard}>
@@ -372,7 +436,7 @@ export function BedManagementScreen({ facilityId }: BedManagementScreenProps) {
         <View style={styles.modalOverlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>
-              {actionType === "occupy" ? "Occupy Bed" : actionType === "release" ? "Release Bed" : "Maintenance"}
+              {actionType === "occupy" ? "Occupy Bed" : actionType === "release" ? "Release Bed" : actionType === "maintenance" ? "Maintenance" : actionType === "createUnit" ? "Create Unit" : "Create Bed"}
             </Text>
 
             {actionType === "occupy" && (
@@ -400,6 +464,25 @@ export function BedManagementScreen({ facilityId }: BedManagementScreenProps) {
               />
             )}
 
+            {actionType === "createUnit" && (
+              <>
+                <TextInput style={styles.input} placeholder="Unit Name (e.g. ICU)" value={unitName} onChangeText={setUnitName} />
+                <TextInput style={styles.input} placeholder="Total Beds" value={unitTotalBeds} onChangeText={setUnitTotalBeds} keyboardType="number-pad" />
+              </>
+            )}
+
+            {actionType === "createBed" && (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Unit ID"
+                  value={selectedUnitId}
+                  onChangeText={setSelectedUnitId}
+                />
+                <TextInput style={styles.input} placeholder="Bed Number (e.g. GW-101)" value={bedNumber} onChangeText={setBedNumber} />
+              </>
+            )}
+
             <TouchableOpacity style={[styles.actionButton, styles.actionButtonPrimary]} onPress={handleSubmitAction}>
               <MaterialIcons name="check" size={20} color="white" />
               <Text style={styles.actionButtonText}>Confirm</Text>
@@ -411,6 +494,11 @@ export function BedManagementScreen({ facilityId }: BedManagementScreenProps) {
                 setModalVisible(false);
                 setPatientId("");
                 setNotes("");
+                setUnitName("");
+                setUnitTotalBeds("");
+                setBedNumber("");
+                setSelectedUnitId("");
+                setSelectedBed(null);
               }}
             >
               <MaterialIcons name="close" size={20} color="white" />

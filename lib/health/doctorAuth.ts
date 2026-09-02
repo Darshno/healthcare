@@ -39,9 +39,6 @@ const DOCTOR_PROFILE_KEY = "rural-health-access.doctor-profile.v1";
 const DOCTOR_REGISTRY_KEY = "rural-health-access.doctor-registry.v1";
 const PORTAL_TOKEN_KEY = "rural-health-access.portal-token";
 
-/** Default PIN for all preset / demo doctors. Shown as hint on the login screen. */
-export const PRESET_DEFAULT_PIN = "1234";
-
 function simpleHash(s: string): string {
   // A lightweight deterministic hash (not cryptographic, sufficient for local-only PIN)
   let h = 5381;
@@ -58,53 +55,6 @@ export function hashPasscode(passcode: string): string {
 export function verifyPasscode(entered: string, storedHash: string): boolean {
   return simpleHash(entered.trim()) === storedHash;
 }
-
-const PRESET_PIN_HASH = hashPasscode(PRESET_DEFAULT_PIN);
-
-export const PRESET_DOCTORS: DoctorProfile[] = [
-  {
-    id: "doc-101",
-    name: "Dr. Asha Verma",
-    doctorId: "MCI-48201",
-    specialization: "Community Medicine / MO",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "98765 43210",
-    email: "dr.asha@phc.in",
-    role: "medical_officer",
-    passcodeHash: PRESET_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 30,
-    lastLoginAt: Date.now(),
-  },
-  {
-    id: "doc-102",
-    name: "Dr. Rajesh Gupta",
-    doctorId: "MCI-29184",
-    specialization: "Pediatrics / Child Health",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "98765 11223",
-    email: "dr.rajesh@phc.in",
-    role: "specialist",
-    passcodeHash: PRESET_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 15,
-    lastLoginAt: Date.now(),
-  },
-  {
-    id: "doc-103",
-    name: "Dr. Meenakshi Iyer",
-    doctorId: "MCI-67092",
-    specialization: "Obstetrics & Gynecology",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "98765 88990",
-    email: "dr.meenakshi@phc.in",
-    role: "specialist",
-    passcodeHash: PRESET_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 10,
-    lastLoginAt: Date.now(),
-  },
-];
 
 function safeBase64Encode(str: string): string {
   if (typeof btoa === "function") return btoa(str);
@@ -145,18 +95,10 @@ export async function getStoredDoctorProfile(): Promise<DoctorProfile | null> {
 export async function getRegisteredDoctors(): Promise<DoctorProfile[]> {
   try {
     const raw = await AsyncStorage.getItem(DOCTOR_REGISTRY_KEY);
-    if (!raw) return PRESET_DOCTORS;
-    const parsed = JSON.parse(raw) as DoctorProfile[];
-    const existingIds = new Set(parsed.map((d) => d.doctorId.toLowerCase()));
-    const merged = [...parsed];
-    for (const preset of PRESET_DOCTORS) {
-      if (!existingIds.has(preset.doctorId.toLowerCase())) {
-        merged.push(preset);
-      }
-    }
-    return merged;
+    if (!raw) return [];
+    return JSON.parse(raw) as DoctorProfile[];
   } catch {
-    return PRESET_DOCTORS;
+    return [];
   }
 }
 
@@ -207,20 +149,21 @@ export async function createDoctorProfile(input: CreateDoctorInput): Promise<Doc
     ? input.name.trim()
     : `Dr. ${input.name.trim()}`;
 
+  if (!input.passcode) {
+    throw new Error("A passcode is required to create a doctor profile.");
+  }
+
   const profile: DoctorProfile = {
     id: `doc-${Date.now().toString(36)}`,
     name: formattedName,
     doctorId: input.doctorId.trim(),
     specialization: input.specialization || "General Medicine (MBBS)",
-    facilityName: input.facilityName.trim() || "Nandipur Primary Health Centre",
+    facilityName: input.facilityName.trim(),
     facilityId: input.facilityId ?? 1,
     phone: input.phone?.trim(),
     email: input.email?.trim(),
     role: "doctor",
-    // Store hashed passcode; fall back to default preset PIN if none provided
-    passcodeHash: input.passcode?.trim()
-      ? hashPasscode(input.passcode.trim())
-      : hashPasscode(PRESET_DEFAULT_PIN),
+    passcodeHash: hashPasscode(input.passcode.trim()),
     createdAt: Date.now(),
     lastLoginAt: Date.now(),
   };

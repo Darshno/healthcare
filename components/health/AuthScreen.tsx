@@ -14,11 +14,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserAuth } from "@/lib/health/DoctorAuthContext";
 import {
-  PRESET_USERS,
   type UserProfile,
   type UserRole,
   type DoctorSpecialization,
-  DEFAULT_DEMO_PIN,
 } from "@/lib/health/userAuth";
 
 const DOCTOR_SPECIALTIES: DoctorSpecialization[] = [
@@ -43,7 +41,7 @@ export function AuthScreen() {
   const { signIn, signUp, registeredUsers } = useUserAuth();
 
   const [activeRole, setActiveRole] = useState<UserRole>("doctor");
-  const [mode, setMode] = useState<"quick" | "signin" | "signup">("quick");
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
 
   // Sign In inputs
   const [signInIdentifier, setSignInIdentifier] = useState("");
@@ -54,7 +52,7 @@ export function AuthScreen() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [passcode, setPasscode] = useState("");
-  const [facilityName, setFacilityName] = useState("Nandipur Primary Health Centre");
+  const [facilityName, setFacilityName] = useState("");
 
   // Role-specific signup
   const [doctorId, setDoctorId] = useState("");
@@ -75,27 +73,19 @@ export function AuthScreen() {
     return registeredUsers.filter((u) => u.role === activeRole);
   }, [registeredUsers, activeRole]);
 
-  const handleQuickLogin = async (profile: UserProfile) => {
-    setLoading(true);
-    setError(null);
-    try {
-      await signIn(profile.name, DEFAULT_DEMO_PIN, profile.role);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Quick sign in failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleManualSignIn = async () => {
     if (!signInIdentifier.trim()) {
       setError("Please enter your Name, ID, or Phone number");
       return;
     }
+    if (!signInPasscode.trim()) {
+      setError("Please enter your passcode");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      await signIn(signInIdentifier.trim(), signInPasscode.trim() || DEFAULT_DEMO_PIN, activeRole);
+      await signIn(signInIdentifier.trim(), signInPasscode.trim(), activeRole);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
@@ -108,6 +98,14 @@ export function AuthScreen() {
       setError("Name is required");
       return;
     }
+    if (!facilityName.trim()) {
+      setError("Facility name is required");
+      return;
+    }
+    if (!passcode.trim()) {
+      setError("Passcode is required");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -116,7 +114,7 @@ export function AuthScreen() {
         role: activeRole,
         phone: phone.trim(),
         email: email.trim(),
-        passcode: passcode.trim() || DEFAULT_DEMO_PIN,
+        passcode: passcode.trim(),
         facilityName: facilityName.trim(),
         doctorId: activeRole === "doctor" ? doctorId.trim() : undefined,
         specialization: activeRole === "doctor" ? specialization : undefined,
@@ -239,16 +237,6 @@ export function AuthScreen() {
         {/* Sub-mode Navigation Tabs */}
         <View style={styles.modeNav}>
           <Pressable
-            onPress={() => { setMode("quick"); setError(null); }}
-            style={[styles.modeBtn, mode === "quick" && styles.modeBtnActive]}
-          >
-            <MaterialIcons name="touch-app" size={18} color={mode === "quick" ? "#087E7B" : "#6C817C"} />
-            <Text style={[styles.modeBtnText, mode === "quick" && styles.modeBtnTextActive]}>
-              1-Click Demo Logins
-            </Text>
-          </Pressable>
-
-          <Pressable
             onPress={() => { setMode("signin"); setError(null); }}
             style={[styles.modeBtn, mode === "signin" && styles.modeBtnActive]}
           >
@@ -277,72 +265,6 @@ export function AuthScreen() {
           </View>
         ) : null}
 
-        {/* ─── Mode 1: 1-Click Quick Demo Logins ─── */}
-        {mode === "quick" && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Choose an Active {activeRole === "doctor" ? "Doctor" : activeRole === "health_worker" ? "Health Worker" : "Patient"}</Text>
-              <Text style={styles.cardSub}>Tap any profile below for instant access with demo credentials.</Text>
-            </View>
-
-            <View style={styles.profilesList}>
-              {roleUsers.map((profile) => (
-                <Pressable
-                  key={profile.id}
-                  onPress={() => handleQuickLogin(profile)}
-                  disabled={loading}
-                  style={({ pressed }) => [
-                    styles.profileCard,
-                    { opacity: pressed || loading ? 0.75 : 1 },
-                  ]}
-                >
-                  <View style={[styles.profileAvatar, { backgroundColor: currentMeta.color }]}>
-                    <Text style={styles.profileAvatarText}>
-                      {profile.name.replace(/^Dr\.\s*/i, "").slice(0, 2).toUpperCase()}
-                    </Text>
-                  </View>
-
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.profileTitleRow}>
-                      <Text style={styles.profileName}>{profile.name}</Text>
-                      <View style={[styles.roleBadge, { backgroundColor: currentMeta.bgColor }]}>
-                        <Text style={[styles.roleBadgeText, { color: currentMeta.color }]}>
-                          {profile.role === "doctor" ? (profile as any).specialization : profile.role === "health_worker" ? (profile as any).designation : `Age ${(profile as any).age} · ${(profile as any).gender}`}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.profileFacility}>
-                      {profile.facilityName}
-                    </Text>
-
-                    <View style={styles.profileMetaRow}>
-                      {profile.role === "doctor" && (
-                        <Text style={styles.profileIdText}>ID: {(profile as any).doctorId}</Text>
-                      )}
-                      {profile.role === "health_worker" && (
-                        <Text style={styles.profileIdText}>Worker ID: {(profile as any).workerId} · {(profile as any).assignedVillage}</Text>
-                      )}
-                      {profile.role === "patient" && (
-                        <Text style={styles.profileIdText}>Health ID: {(profile as any).abhaId} · Ref: {(profile as any).localId}</Text>
-                      )}
-                    </View>
-                  </View>
-
-                  <MaterialIcons name="arrow-forward-ios" size={16} color="#8CA19B" />
-                </Pressable>
-              ))}
-            </View>
-
-            <View style={styles.quickPinHint}>
-              <MaterialIcons name="info-outline" size={16} color="#54716B" />
-              <Text style={styles.quickPinHintText}>
-                Demo PIN for all accounts is preset to <Text style={{ fontWeight: "900", color: "#087E7B" }}>1234</Text>.
-              </Text>
-            </View>
-          </View>
-        )}
-
         {/* ─── Mode 2: Manual Sign In ─── */}
         {mode === "signin" && (
           <View style={styles.card}>
@@ -364,7 +286,7 @@ export function AuthScreen() {
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Passcode / PIN (Demo default: 1234)</Text>
+              <Text style={styles.label}>Passcode / PIN</Text>
               <TextInput
                 value={signInPasscode}
                 onChangeText={setSignInPasscode}
@@ -428,7 +350,7 @@ export function AuthScreen() {
                 />
               </View>
               <View style={[styles.formGroup, { flex: 1 }]}>
-                <Text style={styles.label}>4-Digit PIN (Passcode)</Text>
+                <Text style={styles.label}>4-Digit PIN (Passcode) *</Text>
                 <TextInput
                   value={passcode}
                   onChangeText={setPasscode}
@@ -568,11 +490,11 @@ export function AuthScreen() {
             )}
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Assigned Health Facility</Text>
+              <Text style={styles.label}>Assigned Health Facility *</Text>
               <TextInput
                 value={facilityName}
                 onChangeText={setFacilityName}
-                placeholder="Nandipur Primary Health Centre"
+                placeholder="Enter Hospital/Clinic Name"
                 placeholderTextColor="#8CA19B"
                 style={styles.input}
               />
