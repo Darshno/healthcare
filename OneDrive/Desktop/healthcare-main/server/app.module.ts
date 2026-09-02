@@ -15,6 +15,7 @@ import { FhirModule } from "./modules/fhir/fhir.module";
 import { HealthIdModule } from "./modules/health-id/health-id.module";
 import { ChatModule } from "./modules/chat/chat.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
+import { BedModule } from "./modules/bed/bed.module";
 import {
   QueueController,
   TriageController,
@@ -86,6 +87,7 @@ const redisConfig = hasRedis ? parseRedisUrl(process.env.REDIS_URL!) : null;
     ...(hasRedis ? [BullModule.forRoot({ redis: redisConfig! }), QueueModule] : []),
     ChatModule,
     AnalyticsModule,
+    BedModule,
     ...(hasDb ? [AuthModule, FacilityModule, PatientModule, TeleconsultModule, FhirModule, HealthIdModule] : []),
   ],
   controllers: [

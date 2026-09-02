@@ -47,6 +47,46 @@ export const syncOperations = pgTable("sync_operations", {
   receivedAt: timestamp("receivedAt").defaultNow().notNull(),
 });
 
+export const bedStatusEnum = pgEnum("bedStatus", ["available", "occupied", "maintenance", "reserved"]);
+
+export const hospitalUnits = pgTable("hospital_units", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  facilityId: integer("facilityId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  totalBeds: integer("totalBeds").notNull(),
+  occupiedBeds: integer("occupiedBeds").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export const beds = pgTable("beds", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  unitId: integer("unitId").notNull(),
+  facilityId: integer("facilityId").notNull(),
+  bedNumber: varchar("bedNumber", { length: 64 }).notNull(),
+  status: bedStatusEnum("status").default("available").notNull(),
+  patientId: varchar("patientId", { length: 128 }),
+  occupiedSince: timestamp("occupiedSince"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export const facilityLocations = pgTable("facility_locations", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  facilityId: integer("facilityId").notNull().unique(),
+  latitude: varchar("latitude", { length: 64 }).notNull(),
+  longitude: varchar("longitude", { length: 64 }).notNull(),
+  address: text("address").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
 export type Facility = typeof facilities.$inferSelect;
 export type FacilityMembership = typeof facilityMemberships.$inferSelect;
 export type SyncOperation = typeof syncOperations.$inferSelect;
+export type HospitalUnit = typeof hospitalUnits.$inferSelect;
+export type Bed = typeof beds.$inferSelect;
+export type FacilityLocation = typeof facilityLocations.$inferSelect;
