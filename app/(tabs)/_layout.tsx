@@ -18,46 +18,75 @@ export default function TabLayout() {
 
   return (
     <Tabs
-  screenOptions={{
-    tabBarActiveTintColor: colors.tint,
-    headerShown: false,
-    tabBarButton: HapticTab,
+      screenOptions={{
+        tabBarActiveTintColor: colors.tint,
+        headerShown: false,
+        tabBarButton: HapticTab,
 
-    tabBarStyle: isPatient
-      ? { display: "none" }
-      : {
-          paddingTop: 8,
-          paddingBottom: bottomPadding,
-          height: tabBarHeight,
-          backgroundColor: colors.background,
-          borderTopColor: colors.border,
-          borderTopWidth: 0.5,
-        },
-  }}
->
+        tabBarStyle: isPatient
+          ? { display: "none" }
+          : {
+              paddingTop: 8,
+              paddingBottom: bottomPadding,
+              height: tabBarHeight,
+              backgroundColor: colors.background,
+              borderTopColor: colors.border,
+              borderTopWidth: 0.5,
+            },
+      }}
+    >
       <Tabs.Screen
-  name="patients"
-  options={{
-    title: "Patients",
-    href: isPatient ? null : undefined,
-    tabBarIcon: ({ color }) => (
-      <IconSymbol size={26} name="person.2.fill" color={color} />
-    ),
-  }}
-/>
-      <Tabs.Screen name="queue" options={{ title: isPatient ? "Live Queue" : "Queue", tabBarIcon: ({ color }) => <IconSymbol size={26} name="list.bullet" color={color} /> }} />
+        name="index"
+        options={{
+          title: "Dashboard",
+          href: isPatient ? null : undefined,
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="house.fill" color={color} />,
+        }}
+      />
       <Tabs.Screen
         name="patients"
         options={{
           title: "Patients",
           href: isPatient ? null : undefined,
-          tabBarStyle: isPatient ? { display: "none" } : undefined,
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="person.2.fill" color={color} />,
         }}
       />
-      <Tabs.Screen name="referrals" options={{ title: isPatient ? "Hospitals" : "Referrals", tabBarIcon: ({ color }) => <IconSymbol size={26} name="arrow.triangle.2.circlepath" color={color} /> }} />
-      <Tabs.Screen name="chat" options={{ title: isPatient ? "Care Chat" : "Staff Chat", tabBarIcon: ({ color }) => <IconSymbol size={26} name="bubble.left.and.bubble.right.fill" color={color} /> }} />
-      <Tabs.Screen name="medicines" options={{ title: "Medicines", tabBarIcon: ({ color }) => <IconSymbol size={26} name="pills.fill" color={color} /> }} />
+      <Tabs.Screen
+        name="queue"
+        options={{
+          title: isPatient ? "Live Queue" : "Queue",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="list.bullet" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="referrals"
+        options={{
+          title: isPatient ? "Hospitals" : "Referrals",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="arrow.triangle.2.circlepath" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: isPatient ? "Care Chat" : "Staff Chat",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="bubble.left.and.bubble.right.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="medicines"
+        options={{
+          title: "Medicines",
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="pills.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="beds"
+        options={{
+          title: "Bed Tracker",
+          href: isPatient ? null : undefined,
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="bed.double.fill" color={color} />,
+        }}
+      />
     </Tabs>
   );
 }

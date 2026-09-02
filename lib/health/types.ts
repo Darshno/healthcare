@@ -191,6 +191,49 @@ export type MedicineOrder = {
   updatedAt: number;
 };
 
+// ─── Bed Tracking Types ────────────────────────────────────────────────────────
+
+export type BedStatus = "available" | "occupied" | "maintenance";
+export type UnitType = "general_ward" | "icu" | "icu_pediatric" | "maternity" | "emergency" | "isolation";
+
+export type HospitalUnit = {
+  id: string;
+  facilityId: string;
+  name: string;
+  type: UnitType;
+  totalBeds: number;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+  syncState: SyncState;
+};
+
+export type Bed = {
+  id: string;
+  unitId: string;
+  bedNumber: string;
+  status: BedStatus;
+  occupiedByPatientId?: string;
+  occupiedSince?: number;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+  syncState: SyncState;
+};
+
+export type BedOccupancy = {
+  id: string;
+  bedId: string;
+  patientId: string;
+  status: BedStatus;
+  occupiedFrom: number;
+  occupiedUntil?: number;
+  notes?: string;
+  recordedBy?: string;
+  createdAt: number;
+  syncState: SyncState;
+};
+
 // ─── Master State ─────────────────────────────────────────────────────────────
 
 export type HealthState = {
@@ -205,6 +248,9 @@ export type HealthState = {
   hospitals: HospitalFacility[];
   appointments: Appointment[];
   medicineOrders: MedicineOrder[];
+  hospitalUnits: HospitalUnit[];
+  beds: Bed[];
+  bedOccupancies: BedOccupancy[];
   lastSyncedAt: number;
 };
 

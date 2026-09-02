@@ -47,6 +47,60 @@ export const syncOperations = pgTable("sync_operations", {
   receivedAt: timestamp("receivedAt").defaultNow().notNull(),
 });
 
+export const bedStatusEnum = pgEnum("bedStatus", ["available", "occupied", "maintenance"]);
+export const unitTypeEnum = pgEnum("unitType", ["general_ward", "icu", "icu_pediatric", "maternity", "emergency", "isolation"]);
+
+/**
+ * Hospital Units (e.g., ICU, General Ward, Maternity)
+ */
+export const hospitalUnits = pgTable("hospital_units", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  facilityId: integer("facilityId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: unitTypeEnum("type").notNull(),
+  totalBeds: integer("totalBeds").notNull(),
+  description: text("description"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [uniqueIndex("hospital_units_facility_name").on(table.facilityId, table.name)]);
+
+/**
+ * Individual Beds in Hospital Units
+ */
+export const beds = pgTable("beds", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  unitId: integer("unitId").notNull(),
+  bedNumber: varchar("bedNumber", { length: 50 }).notNull(),
+  status: bedStatusEnum("status").default("available").notNull(),
+  occupiedByPatientId: varchar("occupiedByPatientId", { length: 128 }),
+  occupiedSince: timestamp("occupiedSince"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [uniqueIndex("beds_unit_number").on(table.unitId, table.bedNumber)]);
+
+/**
+ * Bed Occupancy History/Transactions
+ */
+export const bedOccupancy = pgTable("bed_occupancy", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  bedId: integer("bedId").notNull(),
+  patientId: varchar("patientId", { length: 128 }).notNull(),
+  status: bedStatusEnum("status").notNull(),
+  occupiedFrom: timestamp("occupiedFrom").notNull(),
+  occupiedUntil: timestamp("occupiedUntil"),
+  notes: text("notes"),
+  recordedBy: varchar("recordedBy", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type HospitalUnit = typeof hospitalUnits.$inferSelect;
+export type InsertHospitalUnit = typeof hospitalUnits.$inferInsert;
+export type Bed = typeof beds.$inferSelect;
+export type InsertBed = typeof beds.$inferInsert;
+export type BedOccupancy = typeof bedOccupancy.$inferSelect;
+export type InsertBedOccupancy = typeof bedOccupancy.$inferInsert;
+
 export type Facility = typeof facilities.$inferSelect;
 export type FacilityMembership = typeof facilityMemberships.$inferSelect;
 export type SyncOperation = typeof syncOperations.$inferSelect;

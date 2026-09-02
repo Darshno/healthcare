@@ -546,6 +546,65 @@ const seededState: HealthState = {
       updatedAt: now - 6 * 3600000,
     },
   ],
+  hospitalUnits: [
+    {
+      id: "unit-1",
+      facilityId: "hosp-1",
+      name: "General Ward",
+      type: "general_ward",
+      totalBeds: 8,
+      description: "General ward for non-critical patients",
+      createdAt: now - 30 * 86400000,
+      updatedAt: now - 30 * 86400000,
+      syncState: "synced",
+    },
+    {
+      id: "unit-2",
+      facilityId: "hosp-1",
+      name: "Maternity Ward",
+      type: "maternity",
+      totalBeds: 4,
+      description: "Dedicated maternity and delivery ward",
+      createdAt: now - 30 * 86400000,
+      updatedAt: now - 30 * 86400000,
+      syncState: "synced",
+    },
+    {
+      id: "unit-3",
+      facilityId: "hosp-2",
+      name: "ICU",
+      type: "icu",
+      totalBeds: 6,
+      description: "Intensive Care Unit",
+      createdAt: now - 30 * 86400000,
+      updatedAt: now - 30 * 86400000,
+      syncState: "synced",
+    },
+  ],
+  beds: [
+    // General Ward - hosp-1
+    { id: "bed-1", unitId: "unit-1", bedNumber: "GW-101", status: "occupied", occupiedByPatientId: "p-101", occupiedSince: now - 3600000, notes: "Maternity observation", createdAt: now - 30 * 86400000, updatedAt: now - 3600000, syncState: "synced" },
+    { id: "bed-2", unitId: "unit-1", bedNumber: "GW-102", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 1800000, syncState: "synced" },
+    { id: "bed-3", unitId: "unit-1", bedNumber: "GW-103", status: "occupied", occupiedByPatientId: "p-103", occupiedSince: now - 86400000, notes: "Hypertension monitoring", createdAt: now - 30 * 86400000, updatedAt: now - 86400000, syncState: "synced" },
+    { id: "bed-4", unitId: "unit-1", bedNumber: "GW-104", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 7200000, syncState: "synced" },
+    { id: "bed-5", unitId: "unit-1", bedNumber: "GW-105", status: "maintenance", notes: "Bed repair scheduled", createdAt: now - 30 * 86400000, updatedAt: now - 3600000, syncState: "synced" },
+    { id: "bed-6", unitId: "unit-1", bedNumber: "GW-106", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 1800000, syncState: "synced" },
+    { id: "bed-7", unitId: "unit-1", bedNumber: "GW-107", status: "occupied", occupiedByPatientId: "p-102", occupiedSince: now - 43200000, notes: "Pediatric care", createdAt: now - 30 * 86400000, updatedAt: now - 43200000, syncState: "synced" },
+    { id: "bed-8", unitId: "unit-1", bedNumber: "GW-108", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 900000, syncState: "synced" },
+    // Maternity Ward - hosp-1
+    { id: "bed-9", unitId: "unit-2", bedNumber: "MW-201", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 1800000, syncState: "synced" },
+    { id: "bed-10", unitId: "unit-2", bedNumber: "MW-202", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 900000, syncState: "synced" },
+    { id: "bed-11", unitId: "unit-2", bedNumber: "MW-203", status: "occupied", occupiedByPatientId: "p-101", occupiedSince: now - 172800000, notes: "Post-delivery recovery", createdAt: now - 30 * 86400000, updatedAt: now - 172800000, syncState: "synced" },
+    { id: "bed-12", unitId: "unit-2", bedNumber: "MW-204", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 600000, syncState: "synced" },
+    // ICU - hosp-2
+    { id: "bed-13", unitId: "unit-3", bedNumber: "ICU-301", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 3600000, syncState: "synced" },
+    { id: "bed-14", unitId: "unit-3", bedNumber: "ICU-302", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 1800000, syncState: "synced" },
+    { id: "bed-15", unitId: "unit-3", bedNumber: "ICU-303", status: "occupied", occupiedByPatientId: "p-104", occupiedSince: now - 259200000, notes: "Post-operative care", createdAt: now - 30 * 86400000, updatedAt: now - 259200000, syncState: "synced" },
+    { id: "bed-16", unitId: "unit-3", bedNumber: "ICU-304", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 900000, syncState: "synced" },
+    { id: "bed-17", unitId: "unit-3", bedNumber: "ICU-305", status: "maintenance", notes: "Ventilator under maintenance", createdAt: now - 30 * 86400000, updatedAt: now - 1800000, syncState: "synced" },
+    { id: "bed-18", unitId: "unit-3", bedNumber: "ICU-306", status: "available", createdAt: now - 30 * 86400000, updatedAt: now - 3600000, syncState: "synced" },
+  ],
+  bedOccupancies: [],
   lastSyncedAt: now - 15 * 60000,
 };
 
@@ -621,6 +680,24 @@ type HealthContextValue = {
   requestEmergencyAppointment: (input: RequestEmergencyInput) => string;
   orderMedicine: (input: OrderMedicineInput) => string;
   updateMedicineOrderStatus: (orderId: string, status: MedicineOrderStatus) => void;
+  // Bed Management Actions
+  occupyBed: (bedId: string, patientId: string, notes?: string) => void;
+  releaseBed: (bedId: string) => void;
+  getBedsByUnit: (unitId: string) => Bed[];
+  getUnitStats: (unitId: string) => { unit: HospitalUnit; totalBeds: number; occupiedBeds: number; availableBeds: number; maintenanceBeds: number; occupancyRate: number } | null;
+  setMaintenanceBed: (bedId: string, inMaintenance: boolean, notes?: string) => void;
+  getNearbyHospitalsWithBeds: (maxDistance?: number) => HospitalFacility[];
+  getFacilityUnits: (facilityId: string) => HospitalUnit[];
+  getFacilityStats: (facilityId: string) => {
+    facilityId: string;
+    totalBeds: number;
+    occupiedBeds: number;
+    availableBeds: number;
+    maintenanceBeds: number;
+    occupancyRate: number;
+    isFull: boolean;
+    units: Array<HospitalUnit & { occupiedBeds: number; availableBeds: number }>;
+  };
   syncNow: () => void;
   getPatient: (patientId: string) => Patient | undefined;
   getPatientEncounters: (patientId: string) => Encounter[];
@@ -978,6 +1055,122 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       .finally(() => setSyncing(false));
   }, [state.operations, syncing]);
 
+  // ─── Bed Management Actions ────────────────────────────────────────────────
+
+  const occupyBed = useCallback((bedId: string, patientId: string, notes?: string) => {
+    const bed = state.beds.find((b) => b.id === bedId);
+    if (!bed) return;
+
+    setState((previous) => {
+      const occupiedTime = Date.now();
+      const next = {
+        ...previous,
+        beds: previous.beds.map((b) =>
+          b.id === bedId
+            ? { ...b, status: "occupied" as const, occupiedByPatientId: patientId, occupiedSince: occupiedTime, notes, syncState: "pending" as const, updatedAt: occupiedTime }
+            : b
+        ),
+      };
+      return addOperation(next, "bed.occupy", bedId);
+    });
+  }, [state.beds]);
+
+  const releaseBed = useCallback((bedId: string) => {
+    setState((previous) => {
+      const timestamp = Date.now();
+      const next = {
+        ...previous,
+        beds: previous.beds.map((b) =>
+          b.id === bedId
+            ? { ...b, status: "available" as const, occupiedByPatientId: undefined, occupiedSince: undefined, syncState: "pending" as const, updatedAt: timestamp }
+            : b
+        ),
+      };
+      return addOperation(next, "bed.release", bedId);
+    });
+  }, []);
+
+  const getBedsByUnit = useCallback((unitId: string) => {
+    return state.beds.filter((bed) => bed.unitId === unitId);
+  }, [state.beds]);
+
+  const getUnitStats = useCallback((unitId: string) => {
+    const unit = state.hospitalUnits.find((u) => u.id === unitId);
+    if (!unit) return null;
+
+    const beds = state.beds.filter((b) => b.unitId === unitId);
+    const occupied = beds.filter((b) => b.status === "occupied").length;
+    const available = beds.filter((b) => b.status === "available").length;
+    const maintenance = beds.filter((b) => b.status === "maintenance").length;
+
+    return {
+      unit,
+      totalBeds: unit.totalBeds,
+      occupiedBeds: occupied,
+      availableBeds: available,
+      maintenanceBeds: maintenance,
+      occupancyRate: unit.totalBeds > 0 ? (occupied / unit.totalBeds) * 100 : 0,
+    };
+  }, [state.beds, state.hospitalUnits]);
+
+  const setMaintenanceBed = useCallback((bedId: string, inMaintenance: boolean, notes?: string) => {
+    setState((previous) => {
+      const timestamp = Date.now();
+      const next = {
+        ...previous,
+        beds: previous.beds.map((b) =>
+          b.id === bedId
+            ? {
+                ...b,
+                status: inMaintenance ? ("maintenance" as const) : ("available" as const),
+                notes: inMaintenance ? notes : undefined,
+                syncState: "pending" as const,
+                updatedAt: timestamp,
+              }
+            : b
+        ),
+      };
+      return addOperation(next, inMaintenance ? "bed.maintenance" : "bed.available", bedId);
+    });
+  }, []);
+
+  const getNearbyHospitalsWithBeds = useCallback((maxDistance: number = 10) => {
+    // Filter hospitals that have available beds and sort by distance
+    return state.hospitals
+      .filter((h) => h.availableBeds > 0 && h.distanceKm <= maxDistance)
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+  }, [state.hospitals]);
+
+  const getFacilityUnits = useCallback((facilityId: string) => {
+    return state.hospitalUnits.filter((unit) => unit.facilityId === facilityId);
+  }, [state.hospitalUnits]);
+
+  const getFacilityStats = useCallback((facilityId: string) => {
+    const units = state.hospitalUnits.filter((u) => u.facilityId === facilityId);
+    const beds = state.beds.filter((b) => units.some((u) => u.id === b.unitId));
+
+    const totalBeds = beds.length;
+    const occupiedBeds = beds.filter((b) => b.status === "occupied").length;
+    const availableBeds = beds.filter((b) => b.status === "available").length;
+    const maintenanceBeds = beds.filter((b) => b.status === "maintenance").length;
+
+    return {
+      facilityId,
+      totalBeds,
+      occupiedBeds,
+      availableBeds,
+      maintenanceBeds,
+      occupancyRate: totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0,
+      isFull: availableBeds === 0,
+      units: units.map((u) => ({
+        ...u,
+        totalBeds: u.totalBeds,
+        occupiedBeds: beds.filter((b) => b.unitId === u.id && b.status === "occupied").length,
+        availableBeds: beds.filter((b) => b.unitId === u.id && b.status === "available").length,
+      })),
+    };
+  }, [state.hospitalUnits, state.beds]);
+
   // Auto-sync
   const syncNowRef = useRef<() => void>(() => undefined);
   syncNowRef.current = syncNow;
@@ -1018,13 +1211,22 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     requestEmergencyAppointment,
     orderMedicine,
     updateMedicineOrderStatus,
+    // Bed management
+    occupyBed,
+    releaseBed,
+    getBedsByUnit,
+    getUnitStats,
+    setMaintenanceBed,
+    getNearbyHospitalsWithBeds,
+    getFacilityUnits,
+    getFacilityStats,
     syncNow,
     getPatient: (patientId) => state.patients.find((patient) => patient.id === patientId),
     getPatientEncounters: (patientId) => state.encounters.filter((encounter) => encounter.patientId === patientId).sort((a, b) => b.createdAt - a.createdAt),
     getPatientAppointments: (patientId) => state.appointments.filter((a) => a.patientId === patientId).sort((a, b) => b.createdAt - a.createdAt),
     getPatientOrders: (patientId) => state.medicineOrders.filter((o) => o.patientId === patientId).sort((a, b) => b.createdAt - a.createdAt),
     getPatientActiveQueue: (patientId) => state.queue.find((q) => q.patientId === patientId && q.status !== "completed"),
-  }), [addEncounter, bookAppointment, cancelAppointment, createReferral, isHydrated, joinQueue, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, requestEmergencyAppointment, setLanguage, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus]);
+  }), [addEncounter, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus]);
 
   return <HealthContext.Provider value={value}>{children}</HealthContext.Provider>;
 }
