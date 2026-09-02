@@ -380,7 +380,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       specialty: "Emergency & Critical Triage",
       date: new Date().toISOString().split("T")[0],
       timeSlot: "IMMEDIATE EMERGENCY",
-      reason: `[SOS EMERGENCY] ${input.reason}. Symptoms: ${input.symptoms.join(", "}`,
+      reason: `[SOS EMERGENCY] ${input.reason}. Symptoms: ${input.symptoms.join(", ")}`,
       isEmergency: true,
       emergencySeverity: input.severity || "critical",
       status: "emergency_dispatched",
