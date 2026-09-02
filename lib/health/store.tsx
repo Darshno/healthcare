@@ -117,6 +117,7 @@ type HealthContextValue = {
   createReferral: (input: { patientId: string; destination: string; reason: string; urgency: Priority }) => void;
   updateReferralStatus: (referralId: string, status: ReferralStatus) => void;
   recordInventoryTransaction: (medicineId: string, type: InventoryTransactionType, quantity: number) => void;
+  addMedicine: (input: { name: string; localName?: string; category?: string; unit: string; minimumStock: number }) => void;
   // Appointment & Medicine Actions
   bookAppointment: (input: BookAppointmentInput) => string;
   cancelAppointment: (appointmentId: string) => void;
@@ -409,6 +410,37 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       return addOperation(next, `inventory.${type}`, transaction.id);
     });
   }, []);
+
+  const addMedicine = useCallback((input: { name: string; localName?: string; category?: string; unit: string; minimumStock: number }) => {
+    if (!state.currentUser || state.currentUser.role !== "asha_worker") {
+      Alert.alert("Permission Denied", "Only ASHA workers can add medicines.");
+      return;
+    }
+    const timestamp = Date.now();
+    const id = makeId("med");
+    const medicine: Medicine = {
+      id,
+      facilityId: state.currentUser.facilityId,
+      name: input.name.trim(),
+      localName: input.localName?.trim() || input.name.trim(),
+      category: (input.category?.trim() as any) || "general",
+      unit: input.unit.trim(),
+      stock: 0,
+      minimumStock: input.minimumStock || 0,
+      expiryDays: 365,
+      isGovtSupply: true,
+      pricePerUnit: 0,
+      lastSyncedAt: timestamp,
+      syncState: "pending",
+    };
+    setState((previous) => {
+      const next = {
+        ...previous,
+        medicines: [medicine, ...previous.medicines],
+      };
+      return addOperation(next, "medicine.create", id);
+    });
+  }, [state.currentUser]);
 
   const bookAppointment = useCallback((input: BookAppointmentInput): string => {
     const aptId = makeId("apt");
@@ -757,6 +789,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     createReferral,
     updateReferralStatus,
     recordInventoryTransaction,
+    addMedicine,
     bookAppointment,
     cancelAppointment,
     requestEmergencyAppointment,
@@ -777,7 +810,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     getPatientAppointments: (patientId) => state.appointments.filter((a) => a.patientId === patientId && a.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
     getPatientOrders: (patientId) => state.medicineOrders.filter((o) => o.patientId === patientId && o.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
     getPatientActiveQueue: (patientId) => state.queue.find((q) => q.patientId === patientId && q.status !== "completed" && q.facilityId === state.currentUser?.facilityId),
-  }), [addEncounter, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setCurrentUser, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus]);
+  }), [addEncounter, addMedicine, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setCurrentUser, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus]);
 
   return <HealthContext.Provider value={value}>{children}</HealthContext.Provider>;
 }

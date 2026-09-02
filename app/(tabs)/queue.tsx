@@ -29,9 +29,7 @@ export default function QueueScreen() {
             <Text style={commonStyles.eyebrow}>Live service board</Text>
             <Text style={commonStyles.title}>{t("queue")}</Text>
             <Text style={[commonStyles.body, { marginTop: 5, marginBottom: 15 }]}>
-              {isPatient
-                ? "Live OPD queue at this facility. Your position updates in real time."
-                : "Priority first, then first-in-first-out within each category."}
+              Priority first, then first-in-first-out within each category.
             </Text>
 
             {isStaff && (
@@ -55,22 +53,6 @@ export default function QueueScreen() {
           const patient = state.patients.find((record) => record.id === item.patientId);
           if (!patient) return null;
           const minutes = Math.max(1, Math.round((Date.now() - item.arrivedAt) / 60000));
-
-          if (isPatient) {
-            // Anonymised patient-facing queue board — no names, no IDs, no actions
-            return (
-              <View style={[commonStyles.card, styles.card]}>
-                <View style={styles.topRow}>
-                  <Text style={styles.token}>Token #{String(index + 1).padStart(2, "0")}</Text>
-                  <PriorityBadge priority={item.priority} compact />
-                </View>
-                <Text style={commonStyles.body}>{item.service}</Text>
-                <View style={styles.footer}>
-                  <Text style={commonStyles.tiny}>{minutes} min waiting · {t(item.status)}</Text>
-                </View>
-              </View>
-            );
-          }
 
           // Full clinical view for doctors / health workers
           return (

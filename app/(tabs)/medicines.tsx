@@ -8,7 +8,7 @@ import type { Medicine } from "@/lib/health/types";
 import { trpc } from "@/lib/trpc";
 
 export default function MedicinesScreen() {
-  const { state, t, recordInventoryTransaction } = useHealth();
+  const { state, t, recordInventoryTransaction, addMedicine } = useHealth();
   const { role } = useUserAuth();
   const isAshaWorker = role === "asha_worker";
   const [selected, setSelected] = useState<Medicine | undefined>();
@@ -20,21 +20,6 @@ export default function MedicinesScreen() {
   const [newMedCategory, setNewMedCategory] = useState("");
   const [newMedUnit, setNewMedUnit] = useState("");
   const [newMedMinStock, setNewMedMinStock] = useState("");
-
-  const createMedicineMutation = trpc.medicines.create.useMutation({
-    onSuccess: () => {
-      setIsAddModalVisible(false);
-      setNewMedName("");
-      setNewMedLocalName("");
-      setNewMedCategory("");
-      setNewMedUnit("");
-      setNewMedMinStock("");
-      Alert.alert("Success", "Medicine added to inventory.");
-    },
-    onError: (err) => {
-      Alert.alert("Error", err.message || "Failed to add medicine.");
-    },
-  });
 
   const medicines = [...state.medicines].sort((a, b) => (a.stock <= a.minimumStock ? -1 : 1) - (b.stock <= b.minimumStock ? -1 : 1));
 
@@ -51,15 +36,20 @@ export default function MedicinesScreen() {
       Alert.alert("Error", "Name, Category, and Unit are required.");
       return;
     }
-    createMedicineMutation.mutate({
+    addMedicine({
       name: newMedName.trim(),
-      localName: newMedLocalName.trim(),
+      localName: newMedLocalName.trim() || undefined,
       category: newMedCategory.trim(),
       unit: newMedUnit.trim(),
       minimumStock: parseInt(newMedMinStock) || 0,
-      isGovtSupply: true,
-      pricePerUnit: 0,
     });
+    setIsAddModalVisible(false);
+    setNewMedName("");
+    setNewMedLocalName("");
+    setNewMedCategory("");
+    setNewMedUnit("");
+    setNewMedMinStock("");
+    Alert.alert("Success", "Medicine added to inventory.");
   };
 
   return (
