@@ -20,8 +20,8 @@ export default function TabLayout() {
   const isAsha = role === "asha_worker";
   const isReceptionist = role === "receptionist";
 
-  // Beds only visible to chief doctor; Medicines visible to all
-  const showBeds = isChief;
+  // Beds visible to chief doctor, doctors, and ASHA workers
+  const showBeds = isChief || isDoctor || isAsha;
 
   return (
     <Tabs

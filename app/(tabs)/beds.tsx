@@ -9,12 +9,10 @@ export default function BedTrackerScreen() {
   const health = useHealth();
   const { user, role } = useUserAuth();
   const isChief = role === "chief_doctor";
+  const canUpdateBeds = isChief || role === "doctor" || role === "asha_worker";
 
-  // Use the logged-in user's facility
   const facilityId = user?.facilityId ?? "";
   const facilityName = user?.facilityName ?? "Hospital";
-
-  const stats = facilityId ? health.getFacilityStats(facilityId) : null;
 
   return (
     <View style={styles.container}>
@@ -24,14 +22,14 @@ export default function BedTrackerScreen() {
           <Text style={styles.headerTitle}>Bed Management</Text>
           <Text style={styles.headerSub}>{facilityName}</Text>
         </View>
-        <View style={[styles.roleBadge, isChief ? styles.chiefBadge : styles.staffBadge]}>
+        <View style={[styles.roleBadge, canUpdateBeds ? styles.chiefBadge : styles.staffBadge]}>
           <MaterialIcons
-            name={isChief ? "admin-panel-settings" : "visibility"}
+            name={canUpdateBeds ? "edit-location-alt" : "visibility"}
             size={14}
-            color={isChief ? "#087E7B" : "#2369A5"}
+            color={canUpdateBeds ? "#087E7B" : "#2369A5"}
           />
-          <Text style={[styles.roleBadgeText, isChief ? { color: "#087E7B" } : { color: "#2369A5" }]}>
-            {isChief ? "Chief Doctor" : "View Only"}
+          <Text style={[styles.roleBadgeText, canUpdateBeds ? { color: "#087E7B" } : { color: "#2369A5" }]}>
+            {isChief ? "Chief Doctor" : canUpdateBeds ? "Update Access" : "View Only"}
           </Text>
         </View>
       </View>

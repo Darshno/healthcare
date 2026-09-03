@@ -82,10 +82,18 @@ export default function QueueScreen() {
         renderItem={({ item, index }) => {
           if (!item) return null;
           const patient = (state.patients || []).find((record) => record && record.id === item.patientId);
-          const patientName = patient?.name || `Patient #${item.tokenNumber ?? index + 1}`;
-          const patientDetails = patient
+          const isTakenIn = item.status === "called" || item.status === "consulting";
+
+          // Privacy Secrecy: Display Token + Disease only until doctor takes patient in
+          const tokenStr = `#${String(item.tokenNumber ?? index + 1).padStart(2, "0")}`;
+          const patientName = isTakenIn
+            ? (patient?.name || `Patient ${tokenStr}`)
+            : `Token ${tokenStr} (Confidential)`;
+          
+          const patientDetails = isTakenIn && patient
             ? `${patient.age}y · ${patient.sex} · ${patient.localId}`
-            : `Token #${item.tokenNumber ?? index + 1} · ${item.service || "General OPD"}`;
+            : `🔒 Patient Privacy Preserved · ${item.service || "General OPD"}`;
+
           const minutes = item.arrivedAt
             ? Math.max(1, Math.round((Date.now() - item.arrivedAt) / 60000))
             : 1;
@@ -93,25 +101,36 @@ export default function QueueScreen() {
             ? priorityReasonLabel(item.priorityReason)
             : "Routine care";
 
+          const assignedDoctor = item.doctorName ? `👨‍⚕️ ${item.doctorName}` : "👨‍⚕️ Duty Doctor";
+
           return (
             <Pressable
               onPress={() => {
                 if (patient?.id) {
+                  if (isClinical && item.status === "waiting") {
+                    updateQueueStatus(item.id, "called");
+                  }
                   router.push(`/patient/${patient.id}` as never);
                 }
               }}
               style={({ pressed }) => [commonStyles.card, styles.card, { opacity: pressed ? 0.85 : 1 }]}
             >
               <View style={styles.topRow}>
-                <Text style={styles.token}>#{String(item.tokenNumber ?? index + 1).padStart(2, "0")}</Text>
+                <Text style={styles.token}>{tokenStr}</Text>
                 <PriorityBadge priority={item.priority || "routine"} compact />
               </View>
               <Text style={styles.name}>{patientName}</Text>
               <Text style={commonStyles.body}>{patientDetails}</Text>
-              {patient?.disease ? (
-                <Text style={styles.disease}>🩺 {patient.disease}</Text>
-              ) : null}
+              
+              {/* Disease Description Always Shown */}
+              <View style={styles.diseaseContainer}>
+                <Text style={styles.disease}>🩺 Symptom/Disease: {patient?.disease || "General OPD Walk-in"}</Text>
+              </View>
+
+              {/* Matched Doctor Recommendation */}
+              <Text style={styles.assignedDoc}>{assignedDoctor}</Text>
               <Text style={styles.reason}>{reasonText}</Text>
+
               <View style={styles.footer}>
                 <View>
                   <Text style={commonStyles.tiny}>
@@ -127,10 +146,10 @@ export default function QueueScreen() {
                     style={({ pressed }) => [styles.action, { opacity: pressed ? 0.65 : 1 }]}
                   >
                     <Text style={styles.actionText}>
-                      {item.status === "waiting" ? "Call Patient" : "Mark Seen ✓"}
+                      {item.status === "waiting" ? "Take Patient In" : "Mark Seen ✓"}
                     </Text>
                     <MaterialIcons
-                      name={item.status === "waiting" ? "campaign" : "check-circle"}
+                      name={item.status === "waiting" ? "login" : "check-circle"}
                       size={17}
                       color="#087E7B"
                     />
@@ -176,8 +195,10 @@ const styles = StyleSheet.create({
   topRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   token: { color: "#6C817C", fontSize: 12, fontWeight: "900" },
   name: { color: "#18332F", fontSize: 18, fontWeight: "900", marginTop: 8 },
-  disease: { color: "#087E7B", fontSize: 12, fontWeight: "700", marginTop: 4 },
-  reason: { color: "#B66A00", fontSize: 12, fontWeight: "800", marginTop: 6 },
+  diseaseContainer: { backgroundColor: "#E6F5F3", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginTop: 6 },
+  disease: { color: "#087E7B", fontSize: 12, fontWeight: "800" },
+  assignedDoc: { color: "#2369A5", fontSize: 12, fontWeight: "800", marginTop: 6 },
+  reason: { color: "#B66A00", fontSize: 12, fontWeight: "800", marginTop: 4 },
   footer: { alignItems: "flex-end", borderTopColor: "#E7EEEB", borderTopWidth: 1, flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingTop: 10 },
   action: { alignItems: "center", flexDirection: "row", gap: 5, minHeight: 32 },
   actionText: { color: "#087E7B", fontSize: 12, fontWeight: "900" },

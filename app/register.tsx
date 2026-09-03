@@ -13,6 +13,8 @@ import {
 import { useHealth } from "@/lib/health/store";
 import type { Patient } from "@/lib/health/types";
 
+import { analyzeDiseaseRuleBased } from "@/lib/health/aiTriage";
+
 type Sex = Patient["sex"];
 
 const SEX_OPTIONS: { value: Sex; label: string }[] = [
@@ -28,26 +30,6 @@ const TRIAGE_COLORS: Record<string, { bg: string; fg: string; label: string }> =
   routine: { bg: "#EEF6F0", fg: "#198754", label: "✅ Routine" },
 };
 
-function inferTriagePreview(disease: string) {
-  const d = disease.toLowerCase();
-  if (
-    d.includes("emergency") || d.includes("chest pain") ||
-    d.includes("breathing") || d.includes("unconscious") ||
-    d.includes("bleeding") || d.includes("seizure") ||
-    d.includes("stroke") || d.includes("heart attack")
-  ) return "emergency";
-  if (
-    d.includes("fever") || d.includes("pain") || d.includes("infection") ||
-    d.includes("fracture") || d.includes("vomit") || d.includes("diarrhea") ||
-    d.includes("diarrhoea") || d.includes("wound") || d.includes("burn")
-  ) return "urgent";
-  if (
-    d.includes("diabetes") || d.includes("bp") || d.includes("blood pressure") ||
-    d.includes("chronic") || d.includes("follow up") || d.includes("follow-up")
-  ) return "priority";
-  return "routine";
-}
-
 export default function RegisterPatientScreen() {
   const { registerPatient } = useHealth();
 
@@ -57,7 +39,8 @@ export default function RegisterPatientScreen() {
   const [sex, setSex] = useState<Sex>("female");
   const [disease, setDisease] = useState("");
 
-  const triageLevel = disease.trim() ? inferTriagePreview(disease) : "routine";
+  const triageAnalysis = disease.trim() ? analyzeDiseaseRuleBased(disease) : null;
+  const triageLevel = triageAnalysis ? triageAnalysis.priority : "routine";
   const triageColor = TRIAGE_COLORS[triageLevel];
 
   const save = () => {
@@ -190,15 +173,15 @@ export default function RegisterPatientScreen() {
         </View>
 
         {/* Triage Preview */}
-        {disease.trim() ? (
+        {disease.trim() && triageAnalysis ? (
           <View style={[styles.triagePreview, { backgroundColor: triageColor.bg }]}>
-            <MaterialIcons name="health-and-safety" size={18} color={triageColor.fg} />
-            <View>
+            <MaterialIcons name="health-and-safety" size={22} color={triageColor.fg} />
+            <View style={{ flex: 1 }}>
               <Text style={[styles.triageLabel, { color: triageColor.fg }]}>
-                Auto Triage: {triageColor.label}
+                Auto Triage: {triageColor.label} ({triageAnalysis.recommendedSpecialization})
               </Text>
               <Text style={[styles.triageSub, { color: triageColor.fg }]}>
-                Based on symptoms entered above
+                {triageAnalysis.clinicalSummary}
               </Text>
             </View>
           </View>

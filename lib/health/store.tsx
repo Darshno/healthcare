@@ -4,6 +4,8 @@ import { Alert } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { priorityLabel, priorityReasonLabel, referralLabel, syncLabel, translate, type TranslationKey } from "./i18n";
 import { serializeOperation, type SyncTransport } from "./sync";
+import { analyzeDiseaseRuleBased, matchBestDoctor } from "./aiTriage";
+import { getRegisteredUsers } from "./userAuth";
 import type {
   AppLanguage,
   Appointment,
@@ -236,7 +238,40 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     const patientId = makeId("patient");
     const queueId = makeId("queue");
     const timestamp = Date.now();
-    const priority = inferPriority(input.disease);
+
+    // Perform disease triage & doctor matching
+    const triageResult = analyzeDiseaseRuleBased(input.disease || "");
+    const priority = triageResult.priority;
+    const priorityReason = triageResult.priorityReason;
+
+    // Doctor matching
+    let matchedDoctorName = "Dr. General Medical Officer";
+    let matchedDoctorId = "doc-duty-01";
+    let matchedSpecialty = triageResult.recommendedSpecialization;
+
+    getRegisteredUsers().then((users) => {
+      const match = matchBestDoctor(
+        state.currentUser?.facilityId || "",
+        triageResult.recommendedSpecialization,
+        users,
+        state.queue
+      );
+      if (match) {
+        matchedDoctorName = match.name;
+        matchedDoctorId = match.id;
+        matchedSpecialty = match.specialization as any;
+        // Update queue entry with matched doctor
+        setState((prev) => ({
+          ...prev,
+          queue: prev.queue.map((q) =>
+            q.id === queueId
+              ? { ...q, doctorName: match.name, doctorId: match.id, specialty: match.specialization }
+              : q
+          ),
+        }));
+      }
+    }).catch(() => null);
+
     const token = 100 + (state.queue.length + 1);
 
     const patient: Patient = {
@@ -258,14 +293,16 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       id: queueId,
       facilityId: state.currentUser.facilityId,
       patientId,
-      service: "General OPD",
+      service: `${matchedSpecialty} OPD`,
       arrivedAt: timestamp,
       priority,
-      priorityReason: priority === "emergency" ? "clinicianUrgent" : "routineCare",
+      priorityReason,
       status: "waiting",
       tokenNumber: token,
-      roomNumber: "Triage",
-      doctorName: "Pending Assignment",
+      roomNumber: "Triage & OPD",
+      doctorName: matchedDoctorName,
+      doctorId: matchedDoctorId,
+      specialty: matchedSpecialty,
       syncState: "pending",
     };
     const triageEncounter: Encounter = {
@@ -273,7 +310,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       facilityId: state.currentUser.facilityId,
       patientId,
       type: "triage",
-      note: `Initial triage: ${priority}. ${input.disease ? `Complaint: ${input.disease}` : "Routine walk-in"}.`,
+      note: `Triage (${priority}): ${triageResult.clinicalSummary}. Matched Doc: ${matchedDoctorName}.`,
       createdAt: timestamp,
       syncState: "pending",
     };
@@ -287,7 +324,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       return addOperation(addOperation(next, "patient.create", patientId), "queue.add", queueId);
     });
     return patientId;
-  }, [state.queue.length, state.currentUser]);
+  }, [state.queue, state.currentUser]);
 
   const joinQueue = useCallback((input: { patientId: string; service: string; priority?: Priority; priorityReason?: Parameters<typeof priorityReasonLabel>[1] }) => {
     if (!state.currentUser || (state.currentUser.role !== "asha_worker" && state.currentUser.role !== "receptionist")) {
@@ -295,22 +332,49 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       return "";
     }
 
+    const patientRecord = state.patients.find((p) => p.id === input.patientId);
+    const triageResult = analyzeDiseaseRuleBased(patientRecord?.disease || "");
+
     const queueId = makeId("queue");
     const timestamp = Date.now();
     const token = 100 + (state.queue.length + 1);
+
+    let matchedDoctorName = "Dr. General Duty Doctor";
+    let matchedDoctorId = "doc-duty-01";
+
+    getRegisteredUsers().then((users) => {
+      const match = matchBestDoctor(
+        state.currentUser?.facilityId || "",
+        triageResult.recommendedSpecialization,
+        users,
+        state.queue
+      );
+      if (match) {
+        matchedDoctorName = match.name;
+        matchedDoctorId = match.id;
+        setState((prev) => ({
+          ...prev,
+          queue: prev.queue.map((q) =>
+            q.id === queueId ? { ...q, doctorName: match.name, doctorId: match.id } : q
+          ),
+        }));
+      }
+    }).catch(() => null);
 
     const queueEntry: QueueEntry = {
       id: queueId,
       facilityId: state.currentUser.facilityId,
       patientId: input.patientId,
-      service: input.service,
+      service: input.service || `${triageResult.recommendedSpecialization} OPD`,
       arrivedAt: timestamp,
-      priority: input.priority || "routine",
-      priorityReason: input.priorityReason || "routineCare",
+      priority: input.priority || triageResult.priority,
+      priorityReason: input.priorityReason || triageResult.priorityReason,
       status: "waiting",
       tokenNumber: token,
-      roomNumber: "Room 3 (General OPD)",
-      doctorName: "Dr. Asha Verma",
+      roomNumber: "General OPD",
+      doctorName: matchedDoctorName,
+      doctorId: matchedDoctorId,
+      specialty: triageResult.recommendedSpecialization,
       syncState: "pending",
     };
 
