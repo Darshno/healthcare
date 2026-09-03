@@ -9,9 +9,13 @@ import { trpc } from "@/lib/trpc";
 
 export default function MedicinesScreen() {
   const { state, t, recordInventoryTransaction, addMedicine } = useHealth();
-  const { role } = useUserAuth();
-  const canManageMedicines = role === "asha_worker" || role === "receptionist";
+  const { role, user } = useUserAuth();
+  const canManageMedicines = role === "asha_worker" || role === "receptionist" || role === "doctor" || role === "chief_doctor";
   const [selected, setSelected] = useState<Medicine | undefined>();
+
+  // Custom quantity adjustment modal state
+  const [adjustingMed, setAdjustingMed] = useState<{ medicine: Medicine; type: "receipt" | "dispense" } | null>(null);
+  const [customQty, setCustomQty] = useState("");
 
   // Add Medicine State
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
@@ -21,14 +25,30 @@ export default function MedicinesScreen() {
   const [newMedUnit, setNewMedUnit] = useState("");
   const [newMedMinStock, setNewMedMinStock] = useState("");
 
-  const medicines = [...state.medicines].sort((a, b) => (a.stock <= a.minimumStock ? -1 : 1) - (b.stock <= b.minimumStock ? -1 : 1));
+  // Filter medicines by user facility so each hospital has separate stock
+  const userFacilityId = user?.facilityId;
+  const medicines = state.medicines
+    .filter((m) => !m.facilityId || !userFacilityId || m.facilityId === userFacilityId)
+    .sort((a, b) => (a.stock <= a.minimumStock ? -1 : 1) - (b.stock <= b.minimumStock ? -1 : 1));
 
-  const adjust = (medicine: Medicine, type: "receipt" | "dispense") => {
-    recordInventoryTransaction(medicine.id, type, type === "receipt" ? 10 : 1);
+  const handleConfirmAdjust = () => {
+    if (!adjustingMed) return;
+    const qty = parseInt(customQty.trim(), 10);
+    if (isNaN(qty) || qty <= 0) {
+      Alert.alert("Invalid Amount", "Please enter a valid positive number.");
+      return;
+    }
+
+    recordInventoryTransaction(adjustingMed.medicine.id, adjustingMed.type, qty);
+    const updatedStock = adjustingMed.type === "receipt" ? adjustingMed.medicine.stock + qty : Math.max(0, adjustingMed.medicine.stock - qty);
+    
     Alert.alert(
-      type === "receipt" ? "Receipt recorded locally" : "Dispense recorded locally",
-      `${medicine.name} is marked pending sync.`
+      "Stock Updated",
+      `${adjustingMed.medicine.name} ${adjustingMed.type === "receipt" ? "received" : "dispensed"} ${qty} ${adjustingMed.medicine.unit}. New stock: ${updatedStock}`
     );
+
+    setAdjustingMed(null);
+    setCustomQty("");
   };
 
   const handleAddMedicine = () => {
@@ -49,7 +69,7 @@ export default function MedicinesScreen() {
     setNewMedCategory("");
     setNewMedUnit("");
     setNewMedMinStock("");
-    Alert.alert("Success", "Medicine added to inventory.");
+    Alert.alert("Success", "Medicine added to hospital inventory.");
   };
 
   return (
@@ -60,7 +80,7 @@ export default function MedicinesScreen() {
         contentContainerStyle={styles.content}
         ListHeaderComponent={
           <>
-            <Text style={commonStyles.eyebrow}>Pharmacy workflow</Text>
+            <Text style={commonStyles.eyebrow}>{user?.facilityName || "Hospital Pharmacy"}</Text>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
               <Text style={commonStyles.title}>{t("medicines")}</Text>
               {canManageMedicines && (
@@ -73,15 +93,6 @@ export default function MedicinesScreen() {
                 </TouchableOpacity>
               )}
             </View>
-            {!canManageMedicines && (
-              <View style={styles.readOnlyNote}>
-                <MaterialIcons name="info-outline" size={15} color="#2369A5" />
-                <Text style={styles.readOnlyNoteText}>Doctors can view stock. Only ASHA Workers and Receptionists can update it.</Text>
-              </View>
-            )}
-            <Text style={[commonStyles.body, { marginBottom: 15 }]}>
-              Transaction-based availability. Do not treat last-synchronised stock as a guaranteed supply.
-            </Text>
             <View style={styles.alert}>
               <MaterialIcons name="inventory-2" size={19} color="#9A5B00" />
               <Text style={styles.alertText}>
@@ -121,14 +132,14 @@ export default function MedicinesScreen() {
             {selected?.id === item.id && canManageMedicines && (
               <View style={styles.actions}>
                 <Pressable
-                  onPress={() => adjust(item, "receipt")}
+                  onPress={() => { setAdjustingMed({ medicine: item, type: "receipt" }); setCustomQty("10"); }}
                   style={({ pressed }) => [styles.stockAction, { opacity: pressed ? 0.65 : 1 }]}
                 >
                   <MaterialIcons name="add-circle-outline" size={17} color="#087E7B" />
-                  <Text style={styles.stockActionText}>{t("received")} +10</Text>
+                  <Text style={styles.stockActionText}>Received Stock (+)</Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => adjust(item, "dispense")}
+                  onPress={() => { setAdjustingMed({ medicine: item, type: "dispense" }); setCustomQty("1"); }}
                   disabled={item.stock === 0}
                   style={({ pressed }) => [
                     styles.stockAction,
@@ -136,13 +147,45 @@ export default function MedicinesScreen() {
                   ]}
                 >
                   <MaterialIcons name="remove-circle-outline" size={17} color="#087E7B" />
-                  <Text style={styles.stockActionText}>{t("dispensed")} −1</Text>
+                  <Text style={styles.stockActionText}>Dispensed (−)</Text>
                 </Pressable>
               </View>
             )}
           </Pressable>
         )}
       />
+
+      {/* Custom Quantity Stock Update Modal */}
+      <Modal visible={!!adjustingMed} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>
+              {adjustingMed?.type === "receipt" ? "Receive Stock (+)" : "Dispense Stock (−)"}
+            </Text>
+            <Text style={{ color: "#6C817C", fontSize: 13, marginBottom: 12, fontWeight: "600" }}>
+              {adjustingMed?.medicine.name} (Current: {adjustingMed?.medicine.stock} {adjustingMed?.medicine.unit})
+            </Text>
+            <Text style={styles.readOnlyNoteText}>Enter Amount ({adjustingMed?.medicine.unit}):</Text>
+            <TextInput
+              style={[styles.input, { fontSize: 18, fontWeight: "bold", marginVertical: 8 }]}
+              placeholder="e.g. 25"
+              value={customQty}
+              onChangeText={setCustomQty}
+              keyboardType="number-pad"
+              autoFocus
+            />
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleConfirmAdjust}>
+              <Text style={styles.primaryBtnText}>Update Inventory</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => { setAdjustingMed(null); setCustomQty(""); }}
+            >
+              <Text style={styles.secondaryBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={isAddModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>

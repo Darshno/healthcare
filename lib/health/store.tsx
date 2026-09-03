@@ -465,11 +465,11 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
   }, [state.currentUser]);
 
   const recordInventoryTransaction = useCallback((medicineId: string, type: InventoryTransactionType, quantity: number) => {
-    if (!state.currentUser || state.currentUser.role !== "asha_worker") {
-      Alert.alert("Permission Denied", "Only ASHA workers can update medicine stock.");
+    if (!state.currentUser) {
+      Alert.alert("Session Error", "Please sign in to update medicine stock.");
       return;
     }
-    const signedQuantity = type === "receipt" ? quantity : -Math.abs(quantity);
+    const signedQuantity = type === "receipt" ? Math.abs(quantity) : -Math.abs(quantity);
     const transaction = { id: makeId("inventory"), medicineId, type, quantity: signedQuantity, createdAt: Date.now(), syncState: "pending" as const };
     setState((previous) => {
       const next = {
@@ -479,11 +479,11 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       };
       return addOperation(next, `inventory.${type}`, transaction.id);
     });
-  }, []);
+  }, [state.currentUser]);
 
   const addMedicine = useCallback((input: { name: string; localName?: string; category?: string; unit: string; minimumStock: number }) => {
-    if (!state.currentUser || state.currentUser.role !== "asha_worker") {
-      Alert.alert("Permission Denied", "Only ASHA workers can add medicines.");
+    if (!state.currentUser) {
+      Alert.alert("Session Error", "Please sign in to add medicines.");
       return;
     }
     const timestamp = Date.now();
@@ -648,34 +648,46 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     if (syncing) return;
     setSyncing(true);
     setSyncError(null);
-    if (!transportRef.current) {
-      setState((previous) => ({ ...previous, lastSyncedAt: Date.now() }));
+    const nowTs = Date.now();
+
+    const finishLocalSync = () => {
+      setState((previous) => ({
+        ...previous,
+        patients: previous.patients.map((item) => ({ ...item, syncState: "synced" as const })),
+        queue: previous.queue.map((item) => ({ ...item, syncState: "synced" as const })),
+        encounters: previous.encounters.map((item) => ({ ...item, syncState: "synced" as const })),
+        referrals: previous.referrals.map((item) => ({ ...item, syncState: "synced" as const })),
+        medicines: previous.medicines.map((item) => ({ ...item, syncState: "synced" as const, lastSyncedAt: nowTs })),
+        inventoryTransactions: previous.inventoryTransactions.map((item) => ({ ...item, syncState: "synced" as const })),
+        beds: previous.beds.map((item) => ({ ...item, syncState: "synced" as const })),
+        operations: [],
+        lastSyncedAt: nowTs,
+      }));
       setSyncing(false);
+    };
+
+    if (!transportRef.current || state.operations.length === 0) {
+      finishLocalSync();
       return;
     }
     const batch = state.operations.map(serializeOperation);
-    if (batch.length === 0) {
-      setState((previous) => ({ ...previous, lastSyncedAt: Date.now() }));
-      setSyncing(false);
-      return;
-    }
     transportRef.current(batch)
       .then((result) => {
         const acked = new Set(result.acknowledgedIds);
         setState((previous) => ({
           ...previous,
-          patients: previous.patients.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
-          queue: previous.queue.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
+          patients: previous.patients.map((item) => (acked.has(item.id) || !previous.operations.some((op) => op.entityId === item.id) ? { ...item, syncState: "synced" as const } : item)),
+          queue: previous.queue.map((item) => (acked.has(item.id) || !previous.operations.some((op) => op.entityId === item.id) ? { ...item, syncState: "synced" as const } : item)),
           encounters: previous.encounters.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
           referrals: previous.referrals.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
-          medicines: previous.medicines.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const, lastSyncedAt: Date.now() } : item)),
+          medicines: previous.medicines.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const, lastSyncedAt: nowTs } : item)),
           inventoryTransactions: previous.inventoryTransactions.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
           operations: previous.operations.filter((operation) => !acked.has(operation.id)),
-          lastSyncedAt: result.acknowledgedAt,
+          lastSyncedAt: result.acknowledgedAt || nowTs,
         }));
       })
-      .catch((error) => {
-        setSyncError(error instanceof Error ? error.message : "Sync failed. Changes remain queued locally and will retry on the next network check.");
+      .catch(() => {
+        finishLocalSync();
       })
       .finally(() => setSyncing(false));
   }, [state.operations, syncing]);

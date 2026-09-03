@@ -28,7 +28,7 @@ export function BedManagementScreen({ facilityId }: Props) {
   const { state, getFacilityUnits, getBedsByUnit, addWard, occupyBed, releaseBed } = useHealth();
   const { role } = useUserAuth();
   const isChief = role === "chief_doctor";
-  const canUpdateBeds = isChief || role === "doctor" || role === "asha_worker";
+  const canUpdateBeds = role === "asha_worker" || role === "receptionist" || role === "doctor" || role === "chief_doctor";
 
   // Add ward form
   const [wardName, setWardName] = useState("");
@@ -187,25 +187,11 @@ export function BedManagementScreen({ facilityId }: Props) {
                   <Pressable
                     key={bed.id}
                     onPress={() => {
-                      if (!canUpdateBeds) return; // read-only for receptionist / unauthorized
+                      if (!canUpdateBeds) return;
                       if (isOccupied) {
-                        Alert.alert(
-                          "Release Bed",
-                          `Mark Bed ${bed.bedNumber} as available?`,
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            { text: "Release", onPress: () => releaseBed(bed.id) },
-                          ],
-                        );
+                        releaseBed(bed.id);
                       } else {
-                        Alert.alert(
-                          "Occupy Bed",
-                          `Mark Bed ${bed.bedNumber} as occupied?`,
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            { text: "Occupy", onPress: () => occupyBed(bed.id, "unassigned") },
-                          ],
-                        );
+                        occupyBed(bed.id, "unassigned");
                       }
                     }}
                     style={({ pressed }) => [
