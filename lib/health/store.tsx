@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { Alert } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
@@ -6,6 +5,14 @@ import { priorityLabel, priorityReasonLabel, referralLabel, syncLabel, translate
 import { serializeOperation, type SyncTransport } from "./sync";
 import { analyzeDiseaseRuleBased, matchBestDoctor } from "./aiTriage";
 import { getRegisteredUsers } from "./userAuth";
+import {
+  ensureMigrated,
+  hydrateAll,
+  createDebouncedWriter,
+  createSyncRetryScheduler,
+  writeSection,
+  type MetaBundle,
+} from "./offlineStorage";
 import type {
   AppLanguage,
   Appointment,
@@ -34,7 +41,7 @@ import type {
   UserRole,
 } from "./types";
 
-const STORAGE_KEY = "rural-health-access.workspace.v3";
+// Legacy storage key removed — offlineStorage.ts handles all persistence
 let sequence = 0;
 const makeId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(sequence += 1).toString(36)}`;
 const now = Date.now();
@@ -165,32 +172,70 @@ function addOperation(state: HealthState, type: string, entityId: string) {
   return { ...state, operations: [...state.operations, operation] };
 }
 
+// ─── Per-section debounced writers (created once, stable across renders) ────────
+const writePatientsDebounced   = createDebouncedWriter<HealthState["patients"]>("patients", 400);
+const writeQueueDebounced      = createDebouncedWriter<HealthState["queue"]>("queue", 400);
+const writeMedicinesDebounced  = createDebouncedWriter<HealthState["medicines"]>("medicines", 400);
+const writeEncountersDebounced = createDebouncedWriter<HealthState["encounters"]>("encounters", 600);
+const writeReferralsDebounced  = createDebouncedWriter<HealthState["referrals"]>("referrals", 600);
+const writeBedsDebounced       = createDebouncedWriter<HealthState["beds"]>("beds", 400);
+const writeUnitsDebounced      = createDebouncedWriter<HealthState["hospitalUnits"]>("units", 600);
+const writeOpsDebounced        = createDebouncedWriter<HealthState["operations"]>("ops", 300);
+const writeInventoryDebounced  = createDebouncedWriter<HealthState["inventoryTransactions"]>("inventory", 500);
+
 export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ syncTransport?: SyncTransport }>) {
   const [state, setState] = useState<HealthState>(EMPTY_STATE);
   const [isHydrated, setIsHydrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(true);
   const transportRef = useRef<SyncTransport | undefined>(syncTransport);
   transportRef.current = syncTransport;
 
+  // ─── Hydration: parallel section reads with schema migration ──────────────────
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((saved) => {
-        if (saved) {
-          const parsed = JSON.parse(saved) as HealthState;
-          setState((previous) => ({
-            ...EMPTY_STATE,
-            ...parsed,
-            currentUser: previous.currentUser ?? parsed.currentUser ?? null,
-          }));
-        }
+    ensureMigrated()
+      .then(hydrateAll)
+      .then((sections) => {
+        setState((previous) => ({
+          ...EMPTY_STATE,
+          patients:             sections.patients   as HealthState["patients"],
+          queue:                sections.queue      as HealthState["queue"],
+          encounters:           sections.encounters as HealthState["encounters"],
+          referrals:            sections.referrals  as HealthState["referrals"],
+          medicines:            sections.medicines  as HealthState["medicines"],
+          inventoryTransactions:sections.inventory  as HealthState["inventoryTransactions"],
+          beds:                 sections.beds       as HealthState["beds"],
+          hospitalUnits:        sections.units      as HealthState["hospitalUnits"],
+          operations:           sections.ops        as HealthState["operations"],
+          language:             (sections.meta?.language as HealthState["language"]) ?? "en",
+          lastSyncedAt:         sections.meta?.lastSyncedAt ?? 0,
+          currentUser:          previous.currentUser ?? (sections.meta?.currentUser as HealthState["currentUser"]) ?? null,
+        }));
       })
       .catch(() => undefined)
       .finally(() => setIsHydrated(true));
   }, []);
 
+  // ─── Persists: debounce writes per section (avoids serialising whole state) ──
   useEffect(() => {
-    if (isHydrated) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => undefined);
+    if (!isHydrated) return;
+    writePatientsDebounced(state.patients);
+    writeQueueDebounced(state.queue);
+    writeMedicinesDebounced(state.medicines);
+    writeEncountersDebounced(state.encounters);
+    writeReferralsDebounced(state.referrals);
+    writeBedsDebounced(state.beds);
+    writeUnitsDebounced(state.hospitalUnits);
+    writeOpsDebounced(state.operations);
+    writeInventoryDebounced(state.inventoryTransactions);
+    // Meta (lightweight, write immediately)
+    const meta: MetaBundle = {
+      language: state.language,
+      lastSyncedAt: state.lastSyncedAt,
+      currentUser: state.currentUser,
+    };
+    writeSection("meta", meta).catch(() => undefined);
   }, [isHydrated, state]);
 
   const setLanguage = useCallback((language: AppLanguage) => {
@@ -841,17 +886,49 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
   const syncNowRef = useRef<() => void>(() => undefined);
   syncNowRef.current = syncNow;
   const wasOnlineRef = useRef<boolean | null>(null);
+  const cancelRetryRef = useRef<(() => void) | null>(null);
+
+  // ─── Network-aware sync: immediate on reconnect + retry scheduler ────────────
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((netState) => {
-      const isOnline = Boolean(netState.isConnected && netState.isInternetReachable !== false);
+      const online = Boolean(netState.isConnected && netState.isInternetReachable !== false);
       const previouslyOnline = wasOnlineRef.current;
-      wasOnlineRef.current = isOnline;
-      if (isOnline && previouslyOnline === false) {
+      wasOnlineRef.current = online;
+      setIsOnline(online);
+
+      if (online && previouslyOnline === false) {
+        // Back online: sync immediately and restart retry scheduler
         syncNowRef.current();
+        if (cancelRetryRef.current) cancelRetryRef.current();
+        cancelRetryRef.current = createSyncRetryScheduler(() => syncNowRef.current());
+      } else if (!online && previouslyOnline !== false) {
+        // Gone offline: stop retry scheduler to save battery
+        if (cancelRetryRef.current) {
+          cancelRetryRef.current();
+          cancelRetryRef.current = null;
+        }
       }
     });
-    return unsubscribe;
+
+    // Initial retry scheduler when the app first loads (handles deferred hydration sync)
+    cancelRetryRef.current = createSyncRetryScheduler(() => syncNowRef.current(), 3);
+
+    return () => {
+      unsubscribe();
+      if (cancelRetryRef.current) cancelRetryRef.current();
+    };
   }, []);
+
+  // ─── Periodic background sync every 3 minutes when online ───────────────────
+  useEffect(() => {
+    if (!isHydrated) return;
+    const id = setInterval(() => {
+      if (wasOnlineRef.current && state.operations.length > 0) {
+        syncNowRef.current();
+      }
+    }, 3 * 60_000);
+    return () => clearInterval(id);
+  }, [isHydrated, state.operations.length]);
 
   const value = useMemo<HealthContextValue>(() => ({
     state,
