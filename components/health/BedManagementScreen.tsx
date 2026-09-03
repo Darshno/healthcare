@@ -28,6 +28,7 @@ export function BedManagementScreen({ facilityId }: Props) {
   const { state, getFacilityUnits, getBedsByUnit, addWard, occupyBed, releaseBed } = useHealth();
   const { role } = useUserAuth();
   const isChief = role === "chief_doctor";
+  const canUpdateBeds = isChief || role === "doctor" || role === "asha_worker";
 
   // Add ward form
   const [wardName, setWardName] = useState("");
@@ -186,7 +187,7 @@ export function BedManagementScreen({ facilityId }: Props) {
                   <Pressable
                     key={bed.id}
                     onPress={() => {
-                      if (!isChief) return; // read-only for non-chief
+                      if (!canUpdateBeds) return; // read-only for receptionist / unauthorized
                       if (isOccupied) {
                         Alert.alert(
                           "Release Bed",
@@ -224,9 +225,13 @@ export function BedManagementScreen({ facilityId }: Props) {
               })}
             </View>
 
-            {!isChief && (
+            {!canUpdateBeds ? (
               <Text style={styles.readOnlyNote}>
-                Only the Chief Doctor can change bed status.
+                Only doctors and ASHA workers can update bed status.
+              </Text>
+            ) : (
+              <Text style={styles.readOnlyNote}>
+                Tap any bed number to toggle occupied / available status.
               </Text>
             )}
           </View>

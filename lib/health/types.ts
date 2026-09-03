@@ -54,6 +54,8 @@ export type QueueEntry = {
   tokenNumber?: number;
   roomNumber?: string;
   doctorName?: string;
+  doctorId?: string;
+  specialty?: string;
   syncState: SyncState;
 };
 

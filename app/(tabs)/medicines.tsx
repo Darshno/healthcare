@@ -10,7 +10,7 @@ import { trpc } from "@/lib/trpc";
 export default function MedicinesScreen() {
   const { state, t, recordInventoryTransaction, addMedicine } = useHealth();
   const { role } = useUserAuth();
-  const isAshaWorker = role === "asha_worker";
+  const canManageMedicines = role === "asha_worker" || role === "receptionist";
   const [selected, setSelected] = useState<Medicine | undefined>();
 
   // Add Medicine State
@@ -63,7 +63,7 @@ export default function MedicinesScreen() {
             <Text style={commonStyles.eyebrow}>Pharmacy workflow</Text>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
               <Text style={commonStyles.title}>{t("medicines")}</Text>
-              {isAshaWorker && (
+              {canManageMedicines && (
                 <TouchableOpacity
                   style={styles.addButton}
                   onPress={() => setIsAddModalVisible(true)}
@@ -73,10 +73,10 @@ export default function MedicinesScreen() {
                 </TouchableOpacity>
               )}
             </View>
-            {!isAshaWorker && (
+            {!canManageMedicines && (
               <View style={styles.readOnlyNote}>
                 <MaterialIcons name="info-outline" size={15} color="#2369A5" />
-                <Text style={styles.readOnlyNoteText}>Doctors can view stock. Only ASHA Workers can update it.</Text>
+                <Text style={styles.readOnlyNoteText}>Doctors can view stock. Only ASHA Workers and Receptionists can update it.</Text>
               </View>
             )}
             <Text style={[commonStyles.body, { marginBottom: 15 }]}>
@@ -118,7 +118,7 @@ export default function MedicinesScreen() {
                 {item.syncState === "synced" ? t("stockAvailable") : t("staleStock")}
               </Text>
             </View>
-            {selected?.id === item.id && isAshaWorker && (
+            {selected?.id === item.id && canManageMedicines && (
               <View style={styles.actions}>
                 <Pressable
                   onPress={() => adjust(item, "receipt")}

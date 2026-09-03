@@ -120,6 +120,9 @@ export default function PortalScreen() {
   return <PortalBoard facilityId={facilityId} onFacilityId={setFacilityId} onLogout={handleLogout} />;
 }
 
+import { useHealth } from "@/lib/health/store";
+import { useUserAuth } from "@/lib/health/DoctorAuthContext";
+
 function PortalBoard({
   facilityId,
   onFacilityId,
@@ -129,122 +132,38 @@ function PortalBoard({
   onFacilityId: (value: string) => void;
   onLogout: () => void;
 }) {
-  const facility = Number(facilityId) || 0;
-  const { connectionState, lastEvent } = useQueueRealtime(facility);
-  const [rows, setRows] = useState<ServerQueueRow[]>([]);
-  const [patients, setPatients] = useState<ServerPatient[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedPatient, setSelectedPatient] = useState<number | null>(null);
+  const { state, updateQueueStatus } = useHealth();
+  const { user } = useUserAuth();
 
-  const loadSnapshot = useCallback(async (f: number) => {
-    if (!f) {
-      setRows([]);
-      return;
-    }
-    try {
-      const data = await portalFetch<{ entries: ServerQueueRow[] }>(`/api/queue/${f}`);
-      setRows(data.entries ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load queue");
-    }
-  }, []);
+  const activeHospitalId = facilityId || user?.facilityId || "hosp-nandipur-01";
+  const activeHospitalName = user?.facilityName || "Hospital Console";
 
-  const loadPatients = useCallback(async (f: number) => {
-    if (!f) return;
-    try {
-      const data = await portalFetch<ServerPatient[]>(`/api/patients?facilityId=${f}`);
-      setPatients(Array.isArray(data) ? data : []);
-    } catch {
-      setPatients([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!facility) {
-      setRows([]);
-      return;
-    }
-    void loadSnapshot(facility);
-    void loadPatients(facility);
-  }, [facility, loadSnapshot, loadPatients]);
-
-  // Apply live events to the locally-held snapshot so the board stays in sync.
-  const applyEvent = useCallback((event: QueueRealtimeEvent) => {
-    setRows((previous) => {
-      const pid = String(event.patientId);
-      switch (event.type) {
-        case "call_next":
-          return previous.map((row) => String(row.patientId) === pid ? { ...row, status: "called" } : row);
-        case "complete":
-          return previous.filter((row) => String(row.patientId) !== pid);
-        case "pause":
-          return previous.map((row) => String(row.patientId) === pid ? { ...row, status: "paused" } : row);
-        default:
-          return previous;
-      }
-    });
-  }, []);
-
-  useEffect(() => {
-    if (lastEvent) applyEvent(lastEvent);
-  }, [lastEvent, applyEvent]);
-
-  const sorted = useMemo(
-    () =>
-      [...rows]
-        .filter((row) => row.status !== "completed")
-        .sort((a, b) => {
-          const order: Record<string, number> = { emergency: 0, urgent: 1, priority: 2, routine: 3 };
-          const pa = order[String(a.careCategory)] ?? 4;
-          const pb = order[String(b.careCategory)] ?? 4;
-          if (pa !== pb) return pa - pb;
-          return Number(a.enteredAt ?? 0) - Number(b.enteredAt ?? 0);
-        }),
-    [rows],
-  );
-
-  const patientName = (id: number) =>
-    patients.find((p) => p.id === id)?.name ?? `#${id}`;
-
-  const runAction = useCallback(async (method: string, path: string, body?: unknown) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await portalFetch(path, { method, body: body ? JSON.stringify(body) : undefined });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Action failed");
-    } finally {
-      setBusy(false);
-      if (facility) await loadSnapshot(facility);
-    }
-  }, [facility, loadSnapshot]);
-
-  const enqueue = useCallback(async () => {
-    if (!selectedPatient || !facility) return;
-    const patient = patients.find((p) => p.id === selectedPatient);
-    const careCategory = (patient?.careCategory as Priority) || "routine";
-    await runAction("POST", `/api/queue/enqueue`, {
-      facilityId: facility,
-      patientId: selectedPatient,
-      serviceType: "General OPD",
-      careCategory,
-    });
-  }, [selectedPatient, patients, facility, runAction]);
+  const hospitalQueue = useMemo(() => {
+    return (state.queue || [])
+      .filter((q) => q && q.status !== "completed" && (!activeHospitalId || q.facilityId === activeHospitalId))
+      .sort((a, b) => {
+        const order: Record<string, number> = { emergency: 0, urgent: 1, priority: 2, routine: 3 };
+        const pa = order[a.priority] ?? 4;
+        const pb = order[b.priority] ?? 4;
+        if (pa !== pb) return pa - pb;
+        return (a.arrivedAt || 0) - (b.arrivedAt || 0);
+      });
+  }, [state.queue, activeHospitalId]);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.topBar}>
         <View style={styles.brandRow}>
-          <MaterialIcons name="medical-services" size={22} color="#087E7B" />
-          <Text style={styles.brandTitle}>Doctor Console</Text>
+          <MaterialIcons name="medical-services" size={26} color="#087E7B" />
+          <View>
+            <Text style={styles.brandTitle}>Doctor Console · {activeHospitalName}</Text>
+            <Text style={styles.hint}>Live synced hospital board for staff & doctors</Text>
+          </View>
         </View>
         <View style={styles.topBarRight}>
-          <View style={[styles.connPill, { backgroundColor: connectionState === "open" ? "#EEF6F0" : "#FFF4E5" }]}>
-            <View style={[styles.connDot, { backgroundColor: connectionState === "open" ? "#198754" : "#9A5B00" }]} />
-            <Text style={[styles.connText, { color: connectionState === "open" ? "#198754" : "#9A5B00" }]}>
-              {connectionState === "open" ? "Live" : connectionState === "connecting" ? "Connecting…" : "Reconnecting…"}
-            </Text>
+          <View style={[styles.connPill, { backgroundColor: "#EEF6F0" }]}>
+            <View style={[styles.connDot, { backgroundColor: "#198754" }]} />
+            <Text style={[styles.connText, { color: "#198754" }]}>Live Hospital Sync</Text>
           </View>
           <Pressable onPress={onLogout} style={styles.linkButton}>
             <Text style={styles.linkText}>Sign out</Text>
@@ -252,114 +171,82 @@ function PortalBoard({
         </View>
       </View>
 
-      <View style={styles.facilityRow}>
-        <Text style={styles.label}>Facility ID</Text>
-        <TextInput
-          value={facilityId}
-          onChangeText={onFacilityId}
-          keyboardType="numeric"
-          placeholder="e.g. 1"
-          style={styles.input}
-          placeholderTextColor="#9AA8A3"
-        />
+      <View style={styles.sectionRow}>
+        <Text style={styles.sectionTitle}>Live Patient Queue ({hospitalQueue.length} active)</Text>
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      {facility > 0 && (
-        <>
-          <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>Admit to queue</Text>
+      {hospitalQueue.length === 0 ? (
+        <View style={[styles.card, { alignItems: "center", padding: 32 }]}>
+          <MaterialIcons name="check-circle-outline" size={42} color="#087E7B" />
+          <Text style={[styles.sectionTitle, { marginTop: 10 }]}>No Patients Waiting</Text>
+          <Text style={styles.hint}>When an ASHA Worker or Receptionist registers a patient, they will appear here in real-time.</Text>
+        </View>
+      ) : (
+        <View style={styles.board}>
+          <View style={[styles.boardHeader, styles.boardRow]}>
+            <Text style={[styles.cell, styles.colToken]}>Token</Text>
+            <Text style={[styles.cell, styles.colStatus]}>Status</Text>
+            <Text style={[styles.cell, styles.colCat]}>Priority</Text>
+            <Text style={[styles.cell, styles.colPatient]}>Patient Secrecy</Text>
+            <Text style={[styles.cell, styles.colService]}>Complaint / Doctor</Text>
+            <Text style={[styles.cell, styles.colActions]}>Action</Text>
           </View>
-          <View style={styles.admitRow}>
-            <View style={styles.patientPicker}>
-              {patients.length === 0 && <Text style={styles.hint}>No registered patients for this facility.</Text>}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {patients.map((p) => {
-                  const tone = priorityTone[String(p.careCategory) as Priority] ?? priorityTone.routine;
-                  const active = selectedPatient === p.id;
-                  return (
-                    <Pressable
-                      key={p.id}
-                      onPress={() => setSelectedPatient(p.id)}
-                      style={[styles.chip, active && styles.chipActive]}
-                    >
-                      <View style={[styles.chipTag, { backgroundColor: tone.bg }]}>
-                        <Text style={[styles.chipTagText, { color: tone.fg }]}>{(String(p.careCategory) || "routine").slice(0, 2).toUpperCase()}</Text>
-                      </View>
-                      <Text style={styles.chipLabel}>{p.name}</Text>
-                      <Text style={styles.chipSub}>{p.localId}</Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-            <Pressable onPress={enqueue} disabled={!selectedPatient || busy} style={({ pressed }) => [styles.primary, { alignSelf: "flex-start" }, pressed && styles.pressed, (!selectedPatient || busy) && styles.disabled]} accessibilityRole="button">
-              <Text style={styles.primaryText}>Add to queue</Text>
-            </Pressable>
-          </View>
+          {hospitalQueue.map((item, index) => {
+            const patientRecord = state.patients.find((p) => p.id === item.patientId);
+            const isTakenIn = item.status === "called" || item.status === "consulting";
+            const tokenStr = `#${String(item.tokenNumber ?? index + 1).padStart(2, "0")}`;
+            const tone = priorityTone[item.priority || "routine"] || priorityTone.routine;
 
-          <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>Live queue</Text>
-            <Text style={styles.count}>{sorted.length} active</Text>
-          </View>
-
-          {sorted.length === 0 && <Text style={styles.hint}>The queue for this facility is empty. Add a patient above.</Text>}
-
-          <View style={styles.board}>
-            <View style={[styles.boardHeader, styles.boardRow]}>
-              <Text style={[styles.cell, styles.colToken]}>#</Text>
-              <Text style={[styles.cell, styles.colStatus]}>Status</Text>
-              <Text style={[styles.cell, styles.colCat]}>Priority</Text>
-              <Text style={[styles.cell, styles.colPatient]}>Patient</Text>
-              <Text style={[styles.cell, styles.colService]}>Service</Text>
-              <Text style={[styles.cell, styles.colActions]}>Actions</Text>
-            </View>
-            {sorted.map((row, index) => {
-              const pid = Number(row.patientId);
-              const tone = priorityTone[String(row.careCategory) as Priority] ?? priorityTone.routine;
-              const status = String(row.status ?? "waiting");
-              return (
-                <View key={pid} style={[styles.boardRow, styles.boardBody]}>
-                  <Text style={[styles.cell, styles.colToken, styles.tokenNum]}>{String(index + 1).padStart(2, "0")}</Text>
-                  <View style={[styles.cell, styles.colStatus]}>
-                    <Text style={styles.statusText}>{statusText[status] ?? status}</Text>
-                  </View>
-                  <View style={[styles.cell, styles.colCat]}>
-                    <View style={[styles.catPill, { backgroundColor: tone.bg }]}>
-                      <Text style={[styles.catPillText, { color: tone.fg }]}>{String(row.careCategory ?? "routine")}</Text>
-                    </View>
-                  </View>
-                  <View style={[styles.cell, styles.colPatient]}>
-                    <Text style={styles.patientCell}>{patientName(pid)}</Text>
-                    <Text style={styles.subCell}>#{pid}</Text>
-                  </View>
-                  <Text style={[styles.cell, styles.colService, styles.serviceCell]}>{row.serviceType ?? "General OPD"}</Text>
-                  <View style={[styles.cell, styles.colActions, styles.actionCell]}>
-                    {status === "waiting" && (
-                      <Pressable onPress={() => runAction("POST", `/api/queue/call/${facility}/${pid}`)} disabled={busy} style={styles.actionButton}>
-                        <MaterialIcons name="campaign" size={15} color="#087E7B" />
-                        <Text style={styles.actionText}>Call</Text>
-                      </Pressable>
-                    )}
-                    {(status === "called" || status === "in_progress") && (
-                      <Pressable onPress={() => runAction("POST", `/api/queue/complete/${facility}/${pid}`)} disabled={busy} style={styles.actionButton}>
-                        <MaterialIcons name="check" size={15} color="#198754" />
-                        <Text style={styles.actionText}>Complete</Text>
-                      </Pressable>
-                    )}
-                    {status === "waiting" && (
-                      <Pressable onPress={() => runAction("POST", `/api/queue/pause/${facility}/${pid}`)} disabled={busy} style={styles.actionButton}>
-                        <MaterialIcons name="pause" size={15} color="#9A5B00" />
-                        <Text style={styles.actionText}>Pause</Text>
-                      </Pressable>
-                    )}
+            return (
+              <View key={item.id} style={[styles.boardRow, styles.boardBody]}>
+                <Text style={[styles.cell, styles.colToken, styles.tokenNum]}>{tokenStr}</Text>
+                <View style={[styles.cell, styles.colStatus]}>
+                  <Text style={styles.statusText}>{statusText[item.status] || item.status}</Text>
+                </View>
+                <View style={[styles.cell, styles.colCat]}>
+                  <View style={[styles.catPill, { backgroundColor: tone.bg }]}>
+                    <Text style={[styles.catPillText, { color: tone.fg }]}>{item.priority}</Text>
                   </View>
                 </View>
-              );
-            })}
-          </View>
-        </>
+                <View style={[styles.cell, styles.colPatient]}>
+                  <Text style={styles.patientCell}>
+                    {isTakenIn ? (patientRecord?.name || `Patient ${tokenStr}`) : `Token ${tokenStr} 🔒`}
+                  </Text>
+                  <Text style={styles.subCell}>
+                    {isTakenIn && patientRecord ? `${patientRecord.age}y · ${patientRecord.sex}` : "Confidential"}
+                  </Text>
+                </View>
+                <View style={[styles.cell, styles.colService]}>
+                  <Text style={{ color: "#087E7B", fontWeight: "800", fontSize: 13 }}>
+                    🩺 {patientRecord?.disease || item.service || "General OPD"}
+                  </Text>
+                  <Text style={{ color: "#2369A5", fontWeight: "700", fontSize: 11, marginTop: 2 }}>
+                    👨‍⚕️ Assigned: {item.doctorName || "Duty Doctor"}
+                  </Text>
+                </View>
+                <View style={[styles.cell, styles.colActions, styles.actionCell]}>
+                  {item.status === "waiting" ? (
+                    <Pressable
+                      onPress={() => updateQueueStatus(item.id, "called")}
+                      style={styles.actionButton}
+                    >
+                      <MaterialIcons name="login" size={16} color="#087E7B" />
+                      <Text style={styles.actionText}>Take Patient In</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      onPress={() => updateQueueStatus(item.id, "completed")}
+                      style={styles.actionButton}
+                    >
+                      <MaterialIcons name="check-circle" size={16} color="#198754" />
+                      <Text style={{ color: "#198754", fontWeight: "800", fontSize: 12 }}>Mark Seen ✓</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+        </View>
       )}
     </ScrollView>
   );
