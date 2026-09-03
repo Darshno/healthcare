@@ -31,6 +31,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   try {
     const values: InsertUser = {
       openId: user.openId,
+      hospitalId: user.hospitalId ?? 1,
     };
     const updateSet: Record<string, unknown> = {};
 
@@ -47,6 +48,10 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
     textFields.forEach(assignNullable);
 
+    if (user.hospitalId !== undefined) {
+      values.hospitalId = user.hospitalId;
+      updateSet.hospitalId = user.hospitalId;
+    }
     if (user.lastSignedIn !== undefined) {
       values.lastSignedIn = user.lastSignedIn;
       updateSet.lastSignedIn = user.lastSignedIn;
@@ -91,7 +96,7 @@ export async function getUserByOpenId(openId: string) {
 
 export async function recordSyncOperations(input: {
   userId: number;
-  facilityId?: number;
+  hospitalId?: number;
   operations: Array<{ id: string; type: string; entityId: string; createdAt: number; payload?: string }>;
 }) {
   const db = await getDb();
@@ -103,7 +108,7 @@ export async function recordSyncOperations(input: {
       .values({
         operationId: operation.id,
         userId: input.userId,
-        facilityId: input.facilityId ?? null,
+        hospitalId: input.hospitalId ?? null,
         operationType: operation.type,
         entityId: operation.entityId,
         payload: operation.payload ?? null,

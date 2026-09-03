@@ -24,11 +24,13 @@ export type InventoryTransactionType = "receipt" | "dispense" | "adjustment" | "
 
 export type Patient = {
   id: string;
+  facilityId: string;
   localId: string;
   name: string;
   age: number;
   sex: "female" | "male" | "other";
   contact?: string;
+  disease?: string;
   abhaId?: string;
   address?: string;
   bloodGroup?: string;
@@ -41,6 +43,7 @@ export type Patient = {
 
 export type QueueEntry = {
   id: string;
+  facilityId: string;
   patientId: string;
   service: string;
   arrivedAt: number;
@@ -51,11 +54,14 @@ export type QueueEntry = {
   tokenNumber?: number;
   roomNumber?: string;
   doctorName?: string;
+  doctorId?: string;
+  specialty?: string;
   syncState: SyncState;
 };
 
 export type Encounter = {
   id: string;
+  facilityId: string;
   patientId: string;
   type: "triage" | "consultation" | "followUp";
   doctorName?: string;
@@ -68,6 +74,7 @@ export type Encounter = {
 
 export type Referral = {
   id: string;
+  facilityId: string;
   patientId: string;
   destination: string;
   reason: string;
@@ -80,6 +87,7 @@ export type Referral = {
 
 export type Medicine = {
   id: string;
+  facilityId: string;
   name: string;
   localName: string;
   category?: "antibiotic" | "analgesic" | "maternal" | "chronic" | "pediatric" | "general";
@@ -179,6 +187,7 @@ export type MedicineOrderItem = {
 
 export type MedicineOrder = {
   id: string;
+  facilityId: string;
   patientId: string;
   patientName: string;
   patientPhone?: string;
@@ -191,9 +200,62 @@ export type MedicineOrder = {
   updatedAt: number;
 };
 
-// ─── Master State ─────────────────────────────────────────────────────────────
+// ─── Bed Tracking Types ────────────────────────────────────────────────────────
+
+export type BedStatus = "available" | "occupied" | "maintenance";
+export type UnitType = "general_ward" | "icu" | "icu_pediatric" | "maternity" | "emergency" | "isolation";
+
+export type HospitalUnit = {
+  id: string;
+  facilityId: string;
+  name: string;
+  type: UnitType;
+  totalBeds: number;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+  syncState: SyncState;
+};
+
+export type Bed = {
+  id: string;
+  unitId: string;
+  bedNumber: string;
+  status: BedStatus;
+  occupiedByPatientId?: string;
+  occupiedSince?: number;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+  syncState: SyncState;
+};
+
+export type BedOccupancy = {
+  id: string;
+  bedId: string;
+  patientId: string;
+  status: BedStatus;
+  occupiedFrom: number;
+  occupiedUntil?: number;
+  notes?: string;
+  recordedBy?: string;
+  createdAt: number;
+  syncState: SyncState;
+};
+
+export type UserRole = "chief_doctor" | "doctor" | "asha_worker" | "receptionist";
+
+export type CurrentUser = {
+  id: string;
+  name: string;
+  facilityId: string;
+  facilityName: string;
+  role: UserRole;
+  specialty?: string;
+};
 
 export type HealthState = {
+  currentUser: CurrentUser | null;
   language: AppLanguage;
   patients: Patient[];
   queue: QueueEntry[];
@@ -205,6 +267,9 @@ export type HealthState = {
   hospitals: HospitalFacility[];
   appointments: Appointment[];
   medicineOrders: MedicineOrder[];
+  hospitalUnits: HospitalUnit[];
+  beds: Bed[];
+  bedOccupancies: BedOccupancy[];
   lastSyncedAt: number;
 };
 

@@ -14,13 +14,13 @@ export class TeleconsultService {
 
   async create(data: {
     patientId: number;
-    facilityId: number;
+    hospitalId: number;
     clinicianId?: number;
     notes?: string;
   }): Promise<TeleconsultSession> {
     const session = this.sessionRepo.create({
       patientId: data.patientId,
-      facilityId: data.facilityId,
+      hospitalId: data.hospitalId,
       clinicianId: data.clinicianId ?? null,
       notes: data.notes ?? null,
       status: "scheduled",
@@ -35,8 +35,8 @@ export class TeleconsultService {
     return session;
   }
 
-  async findByFacility(facilityId: number, status?: string): Promise<TeleconsultSession[]> {
-    const where: any = { facilityId };
+  async findByHospital(hospitalId: number, status?: string): Promise<TeleconsultSession[]> {
+    const where: any = { hospitalId };
     if (status) where.status = status;
     return this.sessionRepo.find({
       where,
@@ -84,9 +84,9 @@ export class TeleconsultService {
     return this.sessionRepo.save(session);
   }
 
-  async getActiveSessions(facilityId: number): Promise<TeleconsultSession[]> {
+  async getActiveSessions(hospitalId: number): Promise<TeleconsultSession[]> {
     return this.sessionRepo.find({
-      where: { facilityId, status: "active" as any },
+      where: { hospitalId, status: "active" as any },
       order: { startedAt: "DESC" },
     });
   }

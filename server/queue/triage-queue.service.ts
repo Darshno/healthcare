@@ -13,7 +13,7 @@ export class TriageQueueService {
 
   async assess(data: {
     patientId: number;
-    facilityId: number;
+    hospitalId: number;
     serviceType: string;
     screeningData: Record<string, unknown>;
     clinicianOverride?: {

@@ -14,10 +14,10 @@ describe("priority workflow", () => {
 
   it("sorts priority first and arrival time second", () => {
     const entries: QueueEntry[] = [
-      { id: "routine", patientId: "a", service: "OPD", arrivedAt: 100, priority: "routine", priorityReason: "routineCare", status: "waiting", syncState: "synced" },
-      { id: "urgent-late", patientId: "b", service: "OPD", arrivedAt: 300, priority: "urgent", priorityReason: "vitalConcern", status: "waiting", syncState: "synced" },
-      { id: "urgent-early", patientId: "c", service: "OPD", arrivedAt: 200, priority: "urgent", priorityReason: "clinicianUrgent", status: "waiting", syncState: "synced" },
-      { id: "emergency", patientId: "d", service: "OPD", arrivedAt: 400, priority: "emergency", priorityReason: "childDanger", status: "waiting", syncState: "synced" },
+      { id: "routine", facilityId: "1", patientId: "a", service: "OPD", arrivedAt: 100, priority: "routine", priorityReason: "routineCare", status: "waiting", syncState: "synced" },
+      { id: "urgent-late", facilityId: "1", patientId: "b", service: "OPD", arrivedAt: 300, priority: "urgent", priorityReason: "vitalConcern", status: "waiting", syncState: "synced" },
+      { id: "urgent-early", facilityId: "1", patientId: "c", service: "OPD", arrivedAt: 200, priority: "urgent", priorityReason: "clinicianUrgent", status: "waiting", syncState: "synced" },
+      { id: "emergency", facilityId: "1", patientId: "d", service: "OPD", arrivedAt: 400, priority: "emergency", priorityReason: "childDanger", status: "waiting", syncState: "synced" },
     ];
     expect(sortQueue(entries).map((entry) => entry.id)).toEqual(["emergency", "urgent-early", "urgent-late", "routine"]);
   });

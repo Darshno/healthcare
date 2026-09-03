@@ -23,11 +23,11 @@ export class PatientController {
   @UseGuards(JwtAuthGuard)
   @Get()
   async findAll(
-    @Query("facilityId") facilityId: string,
+    @Query("hospitalId") hospitalId: string,
     @Query("careCategory") careCategory?: string,
     @Query("search") search?: string,
   ) {
-    return this.patientService.findByFacility(Number(facilityId), { careCategory, search });
+    return this.patientService.findByHospital(Number(hospitalId), { careCategory, search });
   }
 
   @UseGuards(JwtAuthGuard)
@@ -59,7 +59,7 @@ export class SyncController {
     @Request() req: any,
     @Body()
     body: {
-      facilityId?: number;
+      hospitalId?: number;
       operations: Array<{
         id: string;
         type: string;
@@ -71,7 +71,7 @@ export class SyncController {
   ) {
     return this.syncService.pushOperations({
       userId: req.user.id,
-      facilityId: body.facilityId,
+      hospitalId: body.hospitalId,
       operations: body.operations,
     });
   }
@@ -79,11 +79,11 @@ export class SyncController {
   @UseGuards(JwtAuthGuard)
   @Get("pull")
   async pull(
-    @Query("facilityId") facilityId: string,
+    @Query("hospitalId") hospitalId: string,
     @Query("since") since: string,
   ) {
     return this.syncService.getOperationsSince(
-      Number(facilityId),
+      Number(hospitalId),
       new Date(since),
     );
   }

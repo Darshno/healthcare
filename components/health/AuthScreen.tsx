@@ -1,5 +1,5 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,89 +13,139 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserAuth } from "@/lib/health/DoctorAuthContext";
+import { type UserRole } from "@/lib/health/userAuth";
 import {
-  PRESET_USERS,
-  type UserProfile,
-  type UserRole,
-  type DoctorSpecialization,
-  DEFAULT_DEMO_PIN,
-} from "@/lib/health/userAuth";
+  getHospitals,
+  registerHospital,
+  type HospitalRecord,
+} from "@/lib/health/hospitalRegistry";
 
-const DOCTOR_SPECIALTIES: DoctorSpecialization[] = [
-  "General Medicine (MBBS)",
-  "Pediatrics / Child Health",
-  "Obstetrics & Gynecology",
-  "Emergency & Trauma Care",
-  "Community Medicine / MO",
-  "General Surgery",
-  "Dental & Oral Health",
+// ──────────────────────────────────────────────────────────────────────────────
+// Role meta
+// ──────────────────────────────────────────────────────────────────────────────
+
+type RoleOption = {
+  id: UserRole | "chief_doctor";
+  label: string;
+  sublabel: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  color: string;
+  bg: string;
+};
+
+const ROLES: RoleOption[] = [
+  {
+    id: "chief_doctor",
+    label: "Chief Doctor",
+    sublabel: "Register your hospital & manage wards",
+    icon: "medical-services",
+    color: "#087E7B",
+    bg: "#E6F5F3",
+  },
+  {
+    id: "doctor",
+    label: "Doctor",
+    sublabel: "View patient queue & consultations",
+    icon: "local-hospital",
+    color: "#2369A5",
+    bg: "#EAF4FF",
+  },
+  {
+    id: "asha_worker",
+    label: "ASHA Worker",
+    sublabel: "Register patients & manage medicines",
+    icon: "volunteer-activism",
+    color: "#B66A00",
+    bg: "#FFF4E5",
+  },
+  {
+    id: "receptionist",
+    label: "Receptionist",
+    sublabel: "Register patients & manage arrivals",
+    icon: "person-pin",
+    color: "#6B3FA0",
+    bg: "#F3EEFF",
+  },
 ];
 
-const HEALTH_WORKER_DESIGNATIONS = [
-  "ASHA Facilitator",
-  "ANM Community Nurse",
-  "Clinic Health Helper",
-  "Anganwadi Worker",
-] as const;
+// ──────────────────────────────────────────────────────────────────────────────
+// Component
+// ──────────────────────────────────────────────────────────────────────────────
 
 export function AuthScreen() {
   const insets = useSafeAreaInsets();
-  const { signIn, signUp, registeredUsers } = useUserAuth();
+  const { signIn, signUp } = useUserAuth();
 
-  const [activeRole, setActiveRole] = useState<UserRole>("doctor");
-  const [mode, setMode] = useState<"quick" | "signin" | "signup">("quick");
-
-  // Sign In inputs
-  const [signInIdentifier, setSignInIdentifier] = useState("");
-  const [signInPasscode, setSignInPasscode] = useState("");
-
-  // Sign Up inputs
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [passcode, setPasscode] = useState("");
-  const [facilityName, setFacilityName] = useState("Nandipur Primary Health Centre");
-
-  // Role-specific signup
-  const [doctorId, setDoctorId] = useState("");
-  const [specialization, setSpecialization] = useState<DoctorSpecialization>("General Medicine (MBBS)");
-  const [workerId, setWorkerId] = useState("");
-  const [designation, setDesignation] = useState<(typeof HEALTH_WORKER_DESIGNATIONS)[number]>("ASHA Facilitator");
-  const [assignedVillage, setAssignedVillage] = useState("");
-  const [age, setAge] = useState("");
-  const [gender, setGender] = useState<"female" | "male" | "other">("female");
-  const [bloodGroup, setBloodGroup] = useState("B+");
-  const [abhaId, setAbhaId] = useState("");
-
+  const [activeRole, setActiveRole] = useState<UserRole>("chief_doctor");
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [hospitals, setHospitals] = useState<HospitalRecord[]>([]);
+  const [hospitalsLoading, setHospitalsLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter registered users by active role
-  const roleUsers = useMemo(() => {
-    return registeredUsers.filter((u) => u.role === activeRole);
-  }, [registeredUsers, activeRole]);
+  // ── Sign in form ──
+  const [signInIdentifier, setSignInIdentifier] = useState("");
+  const [signInPasscode, setSignInPasscode] = useState("");
+  const [signInRole, setSignInRole] = useState<UserRole>("chief_doctor");
 
-  const handleQuickLogin = async (profile: UserProfile) => {
-    setLoading(true);
-    setError(null);
+  // ── Sign up form ──
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [passcode, setPasscode] = useState("");
+  // Chief doctor only
+  const [hospitalName, setHospitalName] = useState("");
+  // Staff fields
+  const [selectedHospitalId, setSelectedHospitalId] = useState<string>("");
+
+  const refreshHospitals = useCallback(async () => {
+    setHospitalsLoading(true);
     try {
-      await signIn(profile.name, DEFAULT_DEMO_PIN, profile.role);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Quick sign in failed");
+      const list = await getHospitals();
+      setHospitals(list);
+      if (list.length > 0) {
+        setSelectedHospitalId((prev) => (prev && list.some((h) => h.id === prev)) ? prev : list[0].id);
+      }
+    } catch {
+      setHospitals([]);
     } finally {
-      setLoading(false);
+      setHospitalsLoading(false);
     }
+  }, []);
+
+  // ── Hospital Dropdown State ──
+  const [showHospitalDropdown, setShowHospitalDropdown] = useState(false);
+  const [hospitalSearch, setHospitalSearch] = useState("");
+  const [chiefHospitalMode, setChiefHospitalMode] = useState<"new" | "existing">("new");
+
+  const filteredHospitals = hospitals.filter((h) =>
+    h.name.toLowerCase().includes(hospitalSearch.toLowerCase().trim()),
+  );
+
+  const selectedHospital = hospitals.find((h) => h.id === selectedHospitalId) || hospitals[0];
+
+  const resetForm = () => {
+    setName("");
+    setPhone("");
+    setPasscode("");
+    setHospitalName("");
+    setError(null);
+    setShowHospitalDropdown(false);
+    setHospitalSearch("");
   };
 
-  const handleManualSignIn = async () => {
+  const handleSignIn = async () => {
     if (!signInIdentifier.trim()) {
       setError("Please enter your Name, ID, or Phone number");
+      return;
+    }
+    if (!signInPasscode.trim()) {
+      setError("Please enter your passcode");
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      await signIn(signInIdentifier.trim(), signInPasscode.trim() || DEFAULT_DEMO_PIN, activeRole);
+      await signIn(signInIdentifier.trim(), signInPasscode.trim(), signInRole);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
@@ -104,30 +154,66 @@ export function AuthScreen() {
   };
 
   const handleSignUp = async () => {
-    if (!name.trim()) {
-      setError("Name is required");
+    if (!name.trim()) { setError("Name is required"); return; }
+    if (!passcode.trim() || passcode.trim().length < 4) {
+      setError("Passcode must be at least 4 characters");
       return;
     }
+
     setLoading(true);
     setError(null);
     try {
-      await signUp({
-        name: name.trim(),
-        role: activeRole,
-        phone: phone.trim(),
-        email: email.trim(),
-        passcode: passcode.trim() || DEFAULT_DEMO_PIN,
-        facilityName: facilityName.trim(),
-        doctorId: activeRole === "doctor" ? doctorId.trim() : undefined,
-        specialization: activeRole === "doctor" ? specialization : undefined,
-        workerId: activeRole === "health_worker" ? workerId.trim() : undefined,
-        designation: activeRole === "health_worker" ? designation : undefined,
-        assignedVillage: activeRole === "health_worker" ? assignedVillage.trim() : undefined,
-        age: activeRole === "patient" ? (parseInt(age, 10) || 30) : undefined,
-        gender: activeRole === "patient" ? gender : undefined,
-        bloodGroup: activeRole === "patient" ? bloodGroup : undefined,
-        abhaId: activeRole === "patient" ? abhaId.trim() : undefined,
-      });
+      if (activeRole === "chief_doctor") {
+        let finalFacilityName = hospitalName.trim();
+        let finalFacilityId = selectedHospitalId;
+
+        if (chiefHospitalMode === "new") {
+          if (!finalFacilityName) {
+            setError("Hospital name is required");
+            setLoading(false);
+            return;
+          }
+          const tempId = `tmp-${Date.now()}`;
+          const createdHosp = await registerHospital(finalFacilityName, tempId);
+          finalFacilityName = createdHosp.name;
+          finalFacilityId = createdHosp.id;
+        } else {
+          if (!selectedHospital) {
+            setError("Please select a hospital from the dropdown");
+            setLoading(false);
+            return;
+          }
+          finalFacilityName = selectedHospital.name;
+          finalFacilityId = selectedHospital.id;
+        }
+
+        // Sign up chief doctor
+        await signUp({
+          name: name.trim(),
+          role: "chief_doctor",
+          phone: phone.trim() || undefined,
+          passcode: passcode.trim(),
+          facilityName: finalFacilityName,
+          facilityId: finalFacilityId,
+        });
+        await refreshHospitals();
+      } else {
+        // Staff doctor / asha / receptionist
+        const targetHospital = hospitals.find((h) => h.id === selectedHospitalId) || hospitals[0];
+        if (!targetHospital) {
+          setError("Please select your hospital from the dropdown");
+          setLoading(false);
+          return;
+        }
+        await signUp({
+          name: name.trim(),
+          role: activeRole,
+          phone: phone.trim() || undefined,
+          passcode: passcode.trim(),
+          facilityName: targetHospital.name,
+          facilityId: targetHospital.id,
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -135,34 +221,8 @@ export function AuthScreen() {
     }
   };
 
-  const roleMeta = {
-    doctor: {
-      title: "Doctor / Medical Officer",
-      subtitle: "Clinical Consultations, Triage, Patient Calling & Referrals",
-      icon: "medical-services" as const,
-      color: "#087E7B",
-      bgColor: "#E6F5F3",
-      idPlaceholder: "Doctor ID (e.g. MCI-48201), Name or Email",
-    },
-    health_worker: {
-      title: "Health Helper / ASHA",
-      subtitle: "Community Care, Vitals Intake, OPD Registration & Dispensing",
-      icon: "volunteer-activism" as const,
-      color: "#B66A00",
-      bgColor: "#FFF4E5",
-      idPlaceholder: "Worker ID (e.g. ASHA-101), Name or Phone",
-    },
-    patient: {
-      title: "Patient Portal",
-      subtitle: "Live Queue Tracking, Health Records, Appointments & Medicines",
-      icon: "person" as const,
-      color: "#1B6B93",
-      bgColor: "#E9F4F9",
-      idPlaceholder: "ABHA ID, Patient ID (RH-1024), Name or Phone",
-    },
-  };
-
-  const currentMeta = roleMeta[activeRole];
+  const currentRoleMeta = ROLES.find((r) => r.id === activeRole) ?? ROLES[0];
+  const isStaff = activeRole !== "chief_doctor";
 
   return (
     <KeyboardAvoidingView
@@ -172,426 +232,443 @@ export function AuthScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 32 },
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Branding Header */}
+        {/* Header */}
         <View style={styles.brandHeader}>
           <View style={styles.logoBadge}>
-            <MaterialIcons name="local-hospital" size={32} color="#087E7B" />
+            <MaterialIcons name="local-hospital" size={34} color="#087E7B" />
           </View>
           <Text style={styles.brandTitle}>Rural Health Access</Text>
-          <Text style={styles.brandSub}>Unified Rural Healthcare & Patient Information Platform</Text>
+          <Text style={styles.brandSub}>Healthcare Management Platform</Text>
         </View>
 
-        {/* 3-Role Segmented Switcher */}
-        <View style={styles.roleSelectorCard}>
-          <Text style={styles.roleSelectorLabel}>SELECT YOUR ACCESS ROLE:</Text>
-          <View style={styles.roleTabsRow}>
-            {(["doctor", "health_worker", "patient"] as const).map((role) => {
-              const active = activeRole === role;
-              const meta = roleMeta[role];
-              return (
-                <Pressable
-                  key={role}
-                  onPress={() => {
-                    setActiveRole(role);
-                    setError(null);
-                  }}
-                  style={[
-                    styles.roleTabBtn,
-                    active && {
-                      backgroundColor: meta.bgColor,
-                      borderColor: meta.color,
-                      borderWidth: 2,
-                    },
-                  ]}
-                >
-                  <MaterialIcons
-                    name={meta.icon}
-                    size={22}
-                    color={active ? meta.color : "#6C817C"}
-                  />
-                  <Text
-                    style={[
-                      styles.roleTabBtnText,
-                      active && { color: meta.color, fontWeight: "900" },
-                    ]}
-                  >
-                    {role === "doctor" ? "Doctor" : role === "health_worker" ? "Health Helper" : "Patient"}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {/* Active Role Banner */}
-          <View style={[styles.activeRoleBanner, { backgroundColor: currentMeta.bgColor, borderColor: currentMeta.color }]}>
-            <MaterialIcons name={currentMeta.icon} size={20} color={currentMeta.color} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.activeRoleTitle, { color: currentMeta.color }]}>{currentMeta.title}</Text>
-              <Text style={styles.activeRoleSub}>{currentMeta.subtitle}</Text>
-            </View>
-          </View>
+        {/* Role Picker */}
+        <Text style={styles.sectionLabel}>SELECT YOUR ROLE</Text>
+        <View style={styles.roleGrid}>
+          {ROLES.map((role) => {
+            const active = activeRole === role.id;
+            return (
+              <Pressable
+                key={role.id}
+                onPress={() => {
+                  setActiveRole(role.id as UserRole);
+                  setSignInRole(role.id as UserRole);
+                  setError(null);
+                  resetForm();
+                  void refreshHospitals();
+                }}
+                style={[styles.roleCard, active && { borderColor: role.color, borderWidth: 2, backgroundColor: role.bg }]}
+              >
+                <View style={[styles.roleIconBadge, active && { backgroundColor: role.color }]}>
+                  <MaterialIcons name={role.icon} size={22} color={active ? "#fff" : "#6C817C"} />
+                </View>
+                <Text style={[styles.roleCardTitle, active && { color: role.color }]}>{role.label}</Text>
+                <Text style={styles.roleCardSub}>{role.sublabel}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        {/* Sub-mode Navigation Tabs */}
-        <View style={styles.modeNav}>
-          <Pressable
-            onPress={() => { setMode("quick"); setError(null); }}
-            style={[styles.modeBtn, mode === "quick" && styles.modeBtnActive]}
-          >
-            <MaterialIcons name="touch-app" size={18} color={mode === "quick" ? "#087E7B" : "#6C817C"} />
-            <Text style={[styles.modeBtnText, mode === "quick" && styles.modeBtnTextActive]}>
-              1-Click Demo Logins
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => { setMode("signin"); setError(null); }}
-            style={[styles.modeBtn, mode === "signin" && styles.modeBtnActive]}
-          >
-            <MaterialIcons name="login" size={18} color={mode === "signin" ? "#087E7B" : "#6C817C"} />
-            <Text style={[styles.modeBtnText, mode === "signin" && styles.modeBtnTextActive]}>
-              Sign In with PIN
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => { setMode("signup"); setError(null); }}
-            style={[styles.modeBtn, mode === "signup" && styles.modeBtnActive]}
-          >
-            <MaterialIcons name="person-add" size={18} color={mode === "signup" ? "#087E7B" : "#6C817C"} />
-            <Text style={[styles.modeBtnText, mode === "signup" && styles.modeBtnTextActive]}>
-              New Register
-            </Text>
-          </Pressable>
+        {/* Mode Tabs */}
+        <View style={styles.modeTabs}>
+          {(["signin", "signup"] as const).map((m) => (
+            <Pressable
+              key={m}
+              onPress={() => {
+                setMode(m);
+                setError(null);
+                void refreshHospitals();
+              }}
+              style={[styles.modeTab, mode === m && { backgroundColor: currentRoleMeta.color }]}
+            >
+              <MaterialIcons
+                name={m === "signin" ? "login" : "person-add"}
+                size={16}
+                color={mode === m ? "#fff" : "#6C817C"}
+              />
+              <Text style={[styles.modeTabText, mode === m && { color: "#fff", fontWeight: "900" }]}>
+                {m === "signin" ? "Sign In" : "Register"}
+              </Text>
+            </Pressable>
+          ))}
         </View>
 
-        {/* Error Alert */}
+        {/* Error */}
         {error ? (
-          <View style={styles.errorAlert}>
+          <View style={styles.errorBox}>
             <MaterialIcons name="error-outline" size={18} color="#B42318" />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : null}
 
-        {/* ─── Mode 1: 1-Click Quick Demo Logins ─── */}
-        {mode === "quick" && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Choose an Active {activeRole === "doctor" ? "Doctor" : activeRole === "health_worker" ? "Health Worker" : "Patient"}</Text>
-              <Text style={styles.cardSub}>Tap any profile below for instant access with demo credentials.</Text>
-            </View>
-
-            <View style={styles.profilesList}>
-              {roleUsers.map((profile) => (
-                <Pressable
-                  key={profile.id}
-                  onPress={() => handleQuickLogin(profile)}
-                  disabled={loading}
-                  style={({ pressed }) => [
-                    styles.profileCard,
-                    { opacity: pressed || loading ? 0.75 : 1 },
-                  ]}
-                >
-                  <View style={[styles.profileAvatar, { backgroundColor: currentMeta.color }]}>
-                    <Text style={styles.profileAvatarText}>
-                      {profile.name.replace(/^Dr\.\s*/i, "").slice(0, 2).toUpperCase()}
-                    </Text>
-                  </View>
-
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.profileTitleRow}>
-                      <Text style={styles.profileName}>{profile.name}</Text>
-                      <View style={[styles.roleBadge, { backgroundColor: currentMeta.bgColor }]}>
-                        <Text style={[styles.roleBadgeText, { color: currentMeta.color }]}>
-                          {profile.role === "doctor" ? (profile as any).specialization : profile.role === "health_worker" ? (profile as any).designation : `Age ${(profile as any).age} · ${(profile as any).gender}`}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.profileFacility}>
-                      {profile.facilityName}
-                    </Text>
-
-                    <View style={styles.profileMetaRow}>
-                      {profile.role === "doctor" && (
-                        <Text style={styles.profileIdText}>ID: {(profile as any).doctorId}</Text>
-                      )}
-                      {profile.role === "health_worker" && (
-                        <Text style={styles.profileIdText}>Worker ID: {(profile as any).workerId} · {(profile as any).assignedVillage}</Text>
-                      )}
-                      {profile.role === "patient" && (
-                        <Text style={styles.profileIdText}>Health ID: {(profile as any).abhaId} · Ref: {(profile as any).localId}</Text>
-                      )}
-                    </View>
-                  </View>
-
-                  <MaterialIcons name="arrow-forward-ios" size={16} color="#8CA19B" />
-                </Pressable>
-              ))}
-            </View>
-
-            <View style={styles.quickPinHint}>
-              <MaterialIcons name="info-outline" size={16} color="#54716B" />
-              <Text style={styles.quickPinHintText}>
-                Demo PIN for all accounts is preset to <Text style={{ fontWeight: "900", color: "#087E7B" }}>1234</Text>.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* ─── Mode 2: Manual Sign In ─── */}
+        {/* ─── SIGN IN ─── */}
         {mode === "signin" && (
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Sign In to {currentMeta.title}</Text>
-              <Text style={styles.cardSub}>Enter your registered ID, Phone number, or Name and PIN.</Text>
+            <Text style={styles.cardTitle}>Sign In as {currentRoleMeta.label}</Text>
+
+            {/* Hospital Dropdown */}
+            <Text style={styles.inputLabel}>Select Hospital Facility</Text>
+            <View style={styles.dropdownContainer}>
+              <Pressable
+                onPress={() => setShowHospitalDropdown(!showHospitalDropdown)}
+                style={[styles.dropdownTrigger, showHospitalDropdown && styles.dropdownTriggerActive]}
+              >
+                <View style={styles.dropdownIconCircle}>
+                  <MaterialIcons name="local-hospital" size={18} color="#087E7B" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.dropdownSelectedName} numberOfLines={1}>
+                    {selectedHospital?.name || "Select Hospital Facility"}
+                  </Text>
+                </View>
+                <MaterialIcons
+                  name={showHospitalDropdown ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                  size={22}
+                  color="#087E7B"
+                />
+              </Pressable>
+
+              {showHospitalDropdown && (
+                <View style={styles.dropdownMenu}>
+                  <View style={styles.dropdownSearchRow}>
+                    <MaterialIcons name="search" size={18} color="#6C817C" />
+                    <TextInput
+                      value={hospitalSearch}
+                      onChangeText={setHospitalSearch}
+                      placeholder="Search hospitals..."
+                      placeholderTextColor="#8CA19B"
+                      style={styles.dropdownSearchInput}
+                    />
+                    {hospitalSearch ? (
+                      <Pressable onPress={() => setHospitalSearch("")}>
+                        <MaterialIcons name="close" size={16} color="#6C817C" />
+                      </Pressable>
+                    ) : null}
+                  </View>
+
+                  <ScrollView style={styles.dropdownList} nestedScrollEnabled>
+                    {filteredHospitals.map((h) => {
+                      const isSelected = selectedHospitalId === h.id || (!selectedHospitalId && hospitals[0]?.id === h.id);
+                      return (
+                        <Pressable
+                          key={h.id}
+                          onPress={() => {
+                            setSelectedHospitalId(h.id);
+                            setShowHospitalDropdown(false);
+                            setHospitalSearch("");
+                          }}
+                          style={[styles.dropdownItem, isSelected && styles.dropdownItemSelected]}
+                        >
+                          <MaterialIcons
+                            name="local-hospital"
+                            size={16}
+                            color={isSelected ? "#087E7B" : "#6C817C"}
+                          />
+                          <Text style={[styles.dropdownItemText, isSelected && styles.dropdownItemTextSelected]}>
+                            {h.name}
+                          </Text>
+                          {isSelected && (
+                            <MaterialIcons name="check" size={18} color="#087E7B" />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>ID, Phone Number, or Name</Text>
-              <TextInput
-                value={signInIdentifier}
-                onChangeText={setSignInIdentifier}
-                placeholder={currentMeta.idPlaceholder}
-                placeholderTextColor="#8CA19B"
-                style={styles.input}
-                autoCapitalize="none"
-              />
-            </View>
+            <Text style={styles.inputLabel}>Name, Phone, or ID</Text>
+            <TextInput
+              value={signInIdentifier}
+              onChangeText={setSignInIdentifier}
+              placeholder={activeRole === "chief_doctor" || activeRole === "doctor" ? "e.g. Dr. Priya Sharma or DOC-1234" : "e.g. Sunita Devi or 9876543210"}
+              placeholderTextColor="#8CA19B"
+              style={styles.input}
+              autoCapitalize="none"
+            />
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Passcode / PIN (Demo default: 1234)</Text>
-              <TextInput
-                value={signInPasscode}
-                onChangeText={setSignInPasscode}
-                placeholder="Enter 4-digit PIN"
-                placeholderTextColor="#8CA19B"
-                secureTextEntry
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-            </View>
+            <Text style={styles.inputLabel}>Passcode / PIN</Text>
+            <TextInput
+              value={signInPasscode}
+              onChangeText={setSignInPasscode}
+              placeholder="Enter your PIN"
+              placeholderTextColor="#8CA19B"
+              secureTextEntry
+              keyboardType="number-pad"
+              style={styles.input}
+            />
 
             <Pressable
-              onPress={handleManualSignIn}
+              onPress={handleSignIn}
               disabled={loading}
-              style={({ pressed }) => [
-                styles.primaryBtn,
-                { backgroundColor: currentMeta.color, opacity: loading ? 0.7 : pressed ? 0.85 : 1 },
-              ]}
+              style={({ pressed }) => [styles.primaryBtn, { backgroundColor: currentRoleMeta.color, opacity: pressed || loading ? 0.75 : 1 }]}
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <>
-                  <Text style={styles.primaryBtnText}>Sign In as {activeRole === "doctor" ? "Doctor" : activeRole === "health_worker" ? "Health Worker" : "Patient"}</Text>
-                  <MaterialIcons name="arrow-forward" size={18} color="#FFFFFF" />
+                  <MaterialIcons name="login" size={18} color="#fff" />
+                  <Text style={styles.primaryBtnText}>Sign In</Text>
                 </>
               )}
             </Pressable>
           </View>
         )}
 
-        {/* ─── Mode 3: New Account Registration ─── */}
+        {/* ─── SIGN UP ─── */}
         {mode === "signup" && (
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Register New {currentMeta.title}</Text>
-              <Text style={styles.cardSub}>Create a new profile with role-specific access credentials.</Text>
+            <View style={[styles.rolePill, { backgroundColor: currentRoleMeta.bg }]}>
+              <MaterialIcons name={currentRoleMeta.icon} size={18} color={currentRoleMeta.color} />
+              <Text style={[styles.rolePillText, { color: currentRoleMeta.color }]}>
+                Registering as {currentRoleMeta.label}
+              </Text>
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Full Name *</Text>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder={activeRole === "doctor" ? "Dr. Sunita Rao" : activeRole === "health_worker" ? "Kavita Devi" : "Ramesh Chand"}
-                placeholderTextColor="#8CA19B"
-                style={styles.input}
-              />
-            </View>
-
-            <View style={styles.formRow}>
-              <View style={[styles.formGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Phone Number</Text>
-                <TextInput
-                  value={phone}
-                  onChangeText={setPhone}
-                  placeholder="98765 00000"
-                  placeholderTextColor="#8CA19B"
-                  keyboardType="phone-pad"
-                  style={styles.input}
-                />
-              </View>
-              <View style={[styles.formGroup, { flex: 1 }]}>
-                <Text style={styles.label}>4-Digit PIN (Passcode)</Text>
-                <TextInput
-                  value={passcode}
-                  onChangeText={setPasscode}
-                  placeholder="1234"
-                  placeholderTextColor="#8CA19B"
-                  keyboardType="number-pad"
-                  secureTextEntry
-                  style={styles.input}
-                />
-              </View>
-            </View>
-
-            {/* Doctor specific fields */}
-            {activeRole === "doctor" && (
+            {/* ── Chief Doctor: create hospital OR choose existing ── */}
+            {activeRole === "chief_doctor" && (
               <>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Medical Registration / Doctor ID</Text>
-                  <TextInput
-                    value={doctorId}
-                    onChangeText={setDoctorId}
-                    placeholder="MCI-99482"
-                    placeholderTextColor="#8CA19B"
-                    style={styles.input}
-                  />
+                <Text style={styles.cardSectionTitle}>🏥 Hospital Setup</Text>
+                <View style={styles.modeTabs}>
+                  <Pressable
+                    onPress={() => setChiefHospitalMode("new")}
+                    style={[styles.smallTab, chiefHospitalMode === "new" && styles.smallTabActive]}
+                  >
+                    <Text style={[styles.smallTabText, chiefHospitalMode === "new" && styles.smallTabTextActive]}>
+                      Register New Hospital
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setChiefHospitalMode("existing")}
+                    style={[styles.smallTab, chiefHospitalMode === "existing" && styles.smallTabActive]}
+                  >
+                    <Text style={[styles.smallTabText, chiefHospitalMode === "existing" && styles.smallTabTextActive]}>
+                      Select Existing ({hospitals.length})
+                    </Text>
+                  </Pressable>
                 </View>
 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Specialization</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillRow}>
-                    {DOCTOR_SPECIALTIES.map((spec) => {
-                      const active = specialization === spec;
-                      return (
-                        <Pressable
-                          key={spec}
-                          onPress={() => setSpecialization(spec)}
-                          style={[styles.pill, active && styles.pillActive]}
-                        >
-                          <Text style={[styles.pillText, active && styles.pillTextActive]}>{spec}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              </>
-            )}
-
-            {/* Health Worker specific fields */}
-            {activeRole === "health_worker" && (
-              <>
-                <View style={styles.formRow}>
-                  <View style={[styles.formGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Worker ID</Text>
+                {chiefHospitalMode === "new" ? (
+                  <>
+                    <Text style={styles.inputLabel}>New Hospital Name</Text>
                     <TextInput
-                      value={workerId}
-                      onChangeText={setWorkerId}
-                      placeholder="ASHA-208"
+                      value={hospitalName}
+                      onChangeText={setHospitalName}
+                      placeholder="e.g. City General Hospital"
                       placeholderTextColor="#8CA19B"
                       style={styles.input}
                     />
-                  </View>
-                  <View style={[styles.formGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Assigned Village/Ward</Text>
-                    <TextInput
-                      value={assignedVillage}
-                      onChangeText={setAssignedVillage}
-                      placeholder="Nandipur Sector 2"
-                      placeholderTextColor="#8CA19B"
-                      style={styles.input}
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Designation</Text>
-                  <View style={styles.tagWrapRow}>
-                    {HEALTH_WORKER_DESIGNATIONS.map((desig) => {
-                      const active = designation === desig;
-                      return (
-                        <Pressable
-                          key={desig}
-                          onPress={() => setDesignation(desig)}
-                          style={[styles.pill, active && styles.pillActive]}
-                        >
-                          <Text style={[styles.pillText, active && styles.pillTextActive]}>{desig}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              </>
-            )}
-
-            {/* Patient specific fields */}
-            {activeRole === "patient" && (
-              <>
-                <View style={styles.formRow}>
-                  <View style={[styles.formGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Age (Years)</Text>
-                    <TextInput
-                      value={age}
-                      onChangeText={setAge}
-                      placeholder="32"
-                      placeholderTextColor="#8CA19B"
-                      keyboardType="number-pad"
-                      style={styles.input}
-                    />
-                  </View>
-                  <View style={[styles.formGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Gender</Text>
-                    <View style={styles.genderRow}>
-                      {(["female", "male", "other"] as const).map((g) => (
-                        <Pressable
-                          key={g}
-                          onPress={() => setGender(g)}
-                          style={[styles.genderBtn, gender === g && styles.genderBtnActive]}
-                        >
-                          <Text style={[styles.genderBtnText, gender === g && styles.genderBtnTextActive]}>
-                            {g.charAt(0).toUpperCase() + g.slice(1)}
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.inputLabel}>Select Hospital from Database</Text>
+                    <View style={styles.dropdownContainer}>
+                      <Pressable
+                        onPress={() => setShowHospitalDropdown(!showHospitalDropdown)}
+                        style={[styles.dropdownTrigger, showHospitalDropdown && styles.dropdownTriggerActive]}
+                      >
+                        <View style={styles.dropdownIconCircle}>
+                          <MaterialIcons name="local-hospital" size={18} color="#087E7B" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.dropdownSelectedName} numberOfLines={1}>
+                            {selectedHospital?.name || "Select Hospital Facility"}
                           </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-                </View>
+                        </View>
+                        <MaterialIcons
+                          name={showHospitalDropdown ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                          size={22}
+                          color="#087E7B"
+                        />
+                      </Pressable>
 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>ABHA / Health ID (Optional)</Text>
-                  <TextInput
-                    value={abhaId}
-                    onChangeText={setAbhaId}
-                    placeholder="91-4820-9912-3401"
-                    placeholderTextColor="#8CA19B"
-                    style={styles.input}
-                  />
+                      {showHospitalDropdown && (
+                        <View style={styles.dropdownMenu}>
+                          <View style={styles.dropdownSearchRow}>
+                            <MaterialIcons name="search" size={18} color="#6C817C" />
+                            <TextInput
+                              value={hospitalSearch}
+                              onChangeText={setHospitalSearch}
+                              placeholder="Search hospitals..."
+                              placeholderTextColor="#8CA19B"
+                              style={styles.dropdownSearchInput}
+                            />
+                          </View>
+
+                          <ScrollView style={styles.dropdownList} nestedScrollEnabled>
+                            {filteredHospitals.map((h) => {
+                              const isSelected = selectedHospitalId === h.id;
+                              return (
+                                <Pressable
+                                  key={h.id}
+                                  onPress={() => {
+                                    setSelectedHospitalId(h.id);
+                                    setShowHospitalDropdown(false);
+                                  }}
+                                  style={[styles.dropdownItem, isSelected && styles.dropdownItemSelected]}
+                                >
+                                  <MaterialIcons
+                                    name="local-hospital"
+                                    size={16}
+                                    color={isSelected ? "#087E7B" : "#6C817C"}
+                                  />
+                                  <Text style={[styles.dropdownItemText, isSelected && styles.dropdownItemTextSelected]}>
+                                    {h.name}
+                                  </Text>
+                                  {isSelected && (
+                                    <MaterialIcons name="check" size={18} color="#087E7B" />
+                                  )}
+                                </Pressable>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
+                  </>
+                )}
+
+                <View style={styles.infoBox}>
+                  <MaterialIcons name="info-outline" size={16} color="#2369A5" />
+                  <Text style={styles.infoText}>
+                    Chief Doctors can manage wards, beds, and oversee consultations for this facility.
+                  </Text>
                 </View>
               </>
             )}
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Assigned Health Facility</Text>
-              <TextInput
-                value={facilityName}
-                onChangeText={setFacilityName}
-                placeholder="Nandipur Primary Health Centre"
-                placeholderTextColor="#8CA19B"
-                style={styles.input}
-              />
-            </View>
+            {/* ── Staff: Dropdown Picker for Hospital ── */}
+            {isStaff && (
+              <>
+                <Text style={styles.cardSectionTitle}>🏥 Select Hospital Facility ({hospitals.length} Available)</Text>
+                <Text style={styles.inputLabel}>Hospital / PHC / CHC Dropdown</Text>
+                <View style={styles.dropdownContainer}>
+                  <Pressable
+                    onPress={() => setShowHospitalDropdown(!showHospitalDropdown)}
+                    style={[styles.dropdownTrigger, showHospitalDropdown && styles.dropdownTriggerActive]}
+                  >
+                    <View style={styles.dropdownIconCircle}>
+                      <MaterialIcons name="local-hospital" size={18} color="#087E7B" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dropdownSelectedName} numberOfLines={1}>
+                        {selectedHospital?.name || "Select Hospital Facility"}
+                      </Text>
+                    </View>
+                    <MaterialIcons
+                      name={showHospitalDropdown ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                      size={22}
+                      color="#087E7B"
+                    />
+                  </Pressable>
+
+                  {showHospitalDropdown && (
+                    <View style={styles.dropdownMenu}>
+                      <View style={styles.dropdownSearchRow}>
+                        <MaterialIcons name="search" size={18} color="#6C817C" />
+                        <TextInput
+                          value={hospitalSearch}
+                          onChangeText={setHospitalSearch}
+                          placeholder="Search hospital name..."
+                          placeholderTextColor="#8CA19B"
+                          style={styles.dropdownSearchInput}
+                        />
+                        {hospitalSearch ? (
+                          <Pressable onPress={() => setHospitalSearch("")}>
+                            <MaterialIcons name="close" size={16} color="#6C817C" />
+                          </Pressable>
+                        ) : null}
+                      </View>
+
+                      <ScrollView style={styles.dropdownList} nestedScrollEnabled>
+                        {filteredHospitals.map((h) => {
+                          const isSelected = selectedHospitalId === h.id || (!selectedHospitalId && hospitals[0]?.id === h.id);
+                          return (
+                            <Pressable
+                              key={h.id}
+                              onPress={() => {
+                                setSelectedHospitalId(h.id);
+                                setShowHospitalDropdown(false);
+                                setHospitalSearch("");
+                              }}
+                              style={[styles.dropdownItem, isSelected && styles.dropdownItemSelected]}
+                            >
+                              <MaterialIcons
+                                name="local-hospital"
+                                size={16}
+                                color={isSelected ? "#087E7B" : "#6C817C"}
+                              />
+                              <Text style={[styles.dropdownItemText, isSelected && styles.dropdownItemTextSelected]}>
+                                {h.name}
+                              </Text>
+                              {isSelected && (
+                                <MaterialIcons name="check" size={18} color="#087E7B" />
+                              )}
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              </>
+            )}
+
+            {/* ── Common fields ── */}
+            <Text style={styles.cardSectionTitle}>Your Details</Text>
+            <Text style={styles.inputLabel}>
+              {activeRole === "chief_doctor" || activeRole === "doctor" ? "Full Name (e.g. Dr. Priya)" : "Full Name"}
+            </Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Enter your name"
+              placeholderTextColor="#8CA19B"
+              style={styles.input}
+            />
+
+            <Text style={styles.inputLabel}>Phone Number</Text>
+            <TextInput
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="10-digit mobile number"
+              placeholderTextColor="#8CA19B"
+              keyboardType="phone-pad"
+              style={styles.input}
+            />
+
+            <Text style={styles.inputLabel}>Set PIN / Passcode</Text>
+            <TextInput
+              value={passcode}
+              onChangeText={setPasscode}
+              placeholder="Min 4 digits"
+              placeholderTextColor="#8CA19B"
+              secureTextEntry
+              keyboardType="number-pad"
+              style={styles.input}
+            />
 
             <Pressable
               onPress={handleSignUp}
               disabled={loading}
               style={({ pressed }) => [
                 styles.primaryBtn,
-                { backgroundColor: currentMeta.color, opacity: loading ? 0.7 : pressed ? 0.85 : 1 },
+                { backgroundColor: currentRoleMeta.color, opacity: pressed || loading ? 0.75 : 1 },
               ]}
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <>
-                  <Text style={styles.primaryBtnText}>Complete Registration</Text>
-                  <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />
+                  <MaterialIcons name="person-add" size={18} color="#fff" />
+                  <Text style={styles.primaryBtnText}>
+                    {activeRole === "chief_doctor" ? "Register & Sign In" : "Register & Sign In"}
+                  </Text>
                 </>
               )}
             </Pressable>
@@ -602,341 +679,146 @@ export function AuthScreen() {
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Styles
+// ──────────────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F4F8F6",
-  },
-  scroll: {
-    paddingHorizontal: 16,
-    maxWidth: 580,
-    width: "100%",
-    alignSelf: "center",
-  },
-  brandHeader: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
+  container: { flex: 1, backgroundColor: "#F4F7F5" },
+  scroll: { paddingHorizontal: 18, gap: 16 },
+  brandHeader: { alignItems: "center", marginBottom: 4, gap: 6 },
   logoBadge: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#E6F5F3",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-    borderWidth: 1.5,
-    borderColor: "#BEE6E2",
+    width: 68, height: 68, borderRadius: 20, backgroundColor: "#E6F5F3",
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#087E7B", shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
-  brandTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#18332F",
-    letterSpacing: -0.3,
+  brandTitle: { color: "#18332F", fontSize: 22, fontWeight: "900", letterSpacing: -0.3 },
+  brandSub: { color: "#6C817C", fontSize: 13, fontWeight: "600", textAlign: "center" },
+  sectionLabel: { color: "#6C817C", fontSize: 11, fontWeight: "900", letterSpacing: 1.2 },
+  roleGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  roleCard: {
+    flex: 1, minWidth: "45%", backgroundColor: "#fff", borderRadius: 14,
+    borderWidth: 1.5, borderColor: "#E0EBE7", padding: 12, gap: 6,
+    alignItems: "flex-start",
   },
-  brandSub: {
-    fontSize: 12,
-    color: "#54716B",
-    marginTop: 3,
-    textAlign: "center",
+  roleIconBadge: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: "#F0F4F2",
+    alignItems: "center", justifyContent: "center",
   },
-  roleSelectorCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#E2ECE8",
-    marginBottom: 14,
+  roleCardTitle: { color: "#18332F", fontSize: 14, fontWeight: "800" },
+  roleCardSub: { color: "#6C817C", fontSize: 11, fontWeight: "600", lineHeight: 15 },
+  modeTabs: { flexDirection: "row", gap: 8 },
+  modeTab: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 11, borderRadius: 12, backgroundColor: "#FFFFFF",
+    borderWidth: 1, borderColor: "#E0EBE7",
   },
-  roleSelectorLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#6C817C",
-    letterSpacing: 0.6,
-    marginBottom: 8,
-    textTransform: "uppercase",
+  modeTabText: { color: "#6C817C", fontSize: 14, fontWeight: "700" },
+  errorBox: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#FDECEC", borderRadius: 12, padding: 12,
   },
-  roleTabsRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 10,
-  },
-  roleTabBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    backgroundColor: "#F4F7F5",
-    borderWidth: 1,
-    borderColor: "#DCE7E3",
-  },
-  roleTabBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#54716B",
-  },
-  activeRoleBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  activeRoleTitle: {
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  activeRoleSub: {
-    fontSize: 11,
-    color: "#54716B",
-    marginTop: 1,
-  },
-  modeNav: {
-    flexDirection: "row",
-    backgroundColor: "#E7EFEA",
-    borderRadius: 12,
-    padding: 3,
-    marginBottom: 14,
-    gap: 2,
-  },
-  modeBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    paddingVertical: 8,
-    borderRadius: 9,
-  },
-  modeBtnActive: {
-    backgroundColor: "#FFFFFF",
-    ...Platform.select({
-      web: { boxShadow: "0 1px 3px rgba(0,0,0,0.06)" } as any,
-      default: { elevation: 1 },
-    }),
-  },
-  modeBtnText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#6C817C",
-  },
-  modeBtnTextActive: {
-    color: "#087E7B",
-    fontWeight: "900",
-  },
-  errorAlert: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#FDECEC",
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#F7C3C0",
-    marginBottom: 14,
-  },
-  errorText: {
-    color: "#B42318",
-    fontSize: 12,
-    fontWeight: "700",
-    flex: 1,
-  },
+  errorText: { color: "#B42318", fontSize: 13, fontWeight: "700", flex: 1, lineHeight: 18 },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#E2ECE8",
+    backgroundColor: "#fff", borderRadius: 18, padding: 18, gap: 4,
+    shadowColor: "#18332F", shadowOpacity: 0.06, shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 }, elevation: 3,
   },
-  cardHeader: {
-    marginBottom: 14,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#18332F",
-  },
-  cardSub: {
-    fontSize: 12,
-    color: "#54716B",
-    marginTop: 2,
-  },
-  profilesList: {
-    gap: 10,
-  },
-  profileCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: "#F9FBFB",
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E4EDE9",
-  },
-  profileAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  profileAvatarText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  profileTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 6,
-    flexWrap: "wrap",
-  },
-  profileName: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#18332F",
-  },
-  roleBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  roleBadgeText: {
-    fontSize: 10,
-    fontWeight: "800",
-  },
-  profileFacility: {
-    fontSize: 11,
-    color: "#54716B",
-    marginTop: 2,
-  },
-  profileMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 3,
-  },
-  profileIdText: {
-    fontSize: 10,
-    color: "#8CA19B",
-    fontWeight: "700",
-  },
-  quickPinHint: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#F2F7F5",
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 14,
-  },
-  quickPinHintText: {
-    fontSize: 11,
-    color: "#54716B",
-  },
-  formGroup: {
-    marginBottom: 12,
-  },
-  formRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  label: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#54716B",
-    marginBottom: 5,
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
+  cardTitle: { color: "#18332F", fontSize: 19, fontWeight: "900", marginBottom: 10 },
+  cardSectionTitle: { color: "#18332F", fontSize: 14, fontWeight: "900", marginTop: 10, marginBottom: 2 },
+  inputLabel: { color: "#4A6560", fontSize: 12, fontWeight: "800", marginTop: 8, marginBottom: 4 },
   input: {
-    backgroundColor: "#F7FAF9",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#D5E1DD",
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 13,
-    color: "#18332F",
-  },
-  pillRow: {
-    flexDirection: "row",
-    gap: 6,
-    paddingVertical: 4,
-  },
-  tagWrapRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: "#F2F6F4",
-    borderWidth: 1,
-    borderColor: "#D5E1DD",
-    marginRight: 6,
-  },
-  pillActive: {
-    backgroundColor: "#E6F5F3",
-    borderColor: "#087E7B",
-  },
-  pillText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#54716B",
-  },
-  pillTextActive: {
-    color: "#087E7B",
-    fontWeight: "900",
-  },
-  genderRow: {
-    flexDirection: "row",
-    gap: 4,
-  },
-  genderBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 8,
-    backgroundColor: "#F2F6F4",
-    borderWidth: 1,
-    borderColor: "#D5E1DD",
-  },
-  genderBtnActive: {
-    backgroundColor: "#E6F5F3",
-    borderColor: "#087E7B",
-  },
-  genderBtnText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#54716B",
-  },
-  genderBtnTextActive: {
-    color: "#087E7B",
-    fontWeight: "900",
+    backgroundColor: "#F7FAF9", borderColor: "#D5E1DD", borderRadius: 12, borderWidth: 1,
+    color: "#18332F", fontSize: 15, minHeight: 48, paddingHorizontal: 14,
   },
   primaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 8,
+    alignItems: "center", borderRadius: 14, flexDirection: "row", gap: 8,
+    justifyContent: "center", minHeight: 50, marginTop: 14, paddingHorizontal: 18,
   },
-  primaryBtnText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "900",
+  primaryBtnText: { color: "#fff", fontSize: 15, fontWeight: "900" },
+  rolePill: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    alignSelf: "flex-start", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
+    marginBottom: 4,
   },
+  rolePillText: { fontSize: 13, fontWeight: "800" },
+  infoBox: {
+    flexDirection: "row", alignItems: "flex-start", gap: 8,
+    backgroundColor: "#EAF4FF", borderRadius: 12, padding: 12, marginTop: 4,
+  },
+  infoText: { color: "#2369A5", fontSize: 12, fontWeight: "700", flex: 1, lineHeight: 17 },
+  warningBox: {
+    flexDirection: "row", alignItems: "flex-start", gap: 10,
+    backgroundColor: "#FFF4E5", borderRadius: 12, padding: 14, marginVertical: 6,
+  },
+  warningText: { color: "#9A5B00", fontSize: 13, fontWeight: "700", flex: 1, lineHeight: 19 },
+  facilityBanner: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "#E6F5F3", borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: "#B2DFDB", marginBottom: 10,
+  },
+  facilityBannerLabel: { color: "#087E7B", fontSize: 11, fontWeight: "700", textTransform: "uppercase" },
+  facilityBannerName: { color: "#18332F", fontSize: 14, fontWeight: "800", marginTop: 2 },
+  dropdownContainer: { marginBottom: 10, position: "relative", zIndex: 10 },
+  dropdownTrigger: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1.5,
+    borderColor: "#D5E1DD", paddingHorizontal: 14, paddingVertical: 12,
+  },
+  dropdownTriggerActive: {
+    borderColor: "#087E7B", backgroundColor: "#F7FCFB",
+  },
+  dropdownIconCircle: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: "#E6F5F3", alignItems: "center", justifyContent: "center",
+  },
+  dropdownSelectedName: {
+    color: "#18332F", fontSize: 15, fontWeight: "800",
+  },
+  dropdownMenu: {
+    backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1.5,
+    borderColor: "#087E7B", marginTop: 6, padding: 8,
+    shadowColor: "#087E7B", shadowOpacity: 0.12, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 }, elevation: 5,
+  },
+  dropdownSearchRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#F7FAF9", borderRadius: 10, borderWidth: 1,
+    borderColor: "#D5E1DD", paddingHorizontal: 10, paddingVertical: 6,
+    marginBottom: 8,
+  },
+  dropdownSearchInput: {
+    flex: 1, color: "#18332F", fontSize: 14, paddingVertical: 4,
+  },
+  dropdownList: { maxHeight: 180 },
+  dropdownItem: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10,
+  },
+  dropdownItemSelected: {
+    backgroundColor: "#E6F5F3",
+  },
+  dropdownItemText: {
+    color: "#4A6560", fontSize: 14, fontWeight: "600", flex: 1,
+  },
+  dropdownItemTextSelected: {
+    color: "#087E7B", fontWeight: "900",
+  },
+  smallTab: {
+    flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10,
+    backgroundColor: "#F7FAF9", borderWidth: 1, borderColor: "#D5E1DD",
+    alignItems: "center", justifyContent: "center", marginBottom: 6,
+  },
+  smallTabActive: {
+    backgroundColor: "#087E7B", borderColor: "#087E7B",
+  },
+  smallTabText: { color: "#4A6560", fontSize: 12, fontWeight: "700" },
+  smallTabTextActive: { color: "#FFFFFF", fontWeight: "800" },
+  inlineRoles: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
+  inlineRoleBtn: {
+    borderRadius: 8, borderWidth: 1.5, borderColor: "#D5E1DD",
+    paddingHorizontal: 10, paddingVertical: 7, backgroundColor: "#F7FAF9",
+  },
+  inlineRoleBtnText: { color: "#4A6560", fontSize: 12, fontWeight: "700" },
 });

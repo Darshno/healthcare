@@ -5,16 +5,12 @@ import { PrimaryButton, PriorityBadge, SectionHeader, SyncPill, commonStyles } f
 import { useHealth } from "@/lib/health/store";
 import { sortQueue } from "@/lib/health/workflows";
 import { useUserAuth } from "@/lib/health/DoctorAuthContext";
-import { PatientPortal } from "@/components/health/PatientPortal";
 
 export default function OperationsHome() {
   const { state, t, syncNow, syncing, syncError, setLanguage, priorityReasonLabel } = useHealth();
   const { user, role, doctor, healthWorker, signOut } = useUserAuth();
 
-  // If active user is a Patient, render the dedicated Patient Portal interface
-  if (role === "patient") {
-    return <PatientPortal />;
-  }
+  // No patient role in the new system
 
   const handleSignOut = () => {
     signOut();
@@ -31,9 +27,22 @@ export default function OperationsHome() {
     ? user.name.replace(/^Dr\.\s*/i, "").trim().slice(0, 2).toUpperCase()
     : "HC";
 
-  const roleTitle = role === "doctor" ? "Doctor / Medical Officer" : "Health Helper / ASHA";
-  const roleColor = role === "doctor" ? "#087E7B" : "#B66A00";
-  const roleBg = role === "doctor" ? "#E6F5F3" : "#FFF4E5";
+  const roleTitle =
+    role === "chief_doctor" ? "Chief Doctor"
+    : role === "doctor" ? "Doctor / Medical Officer"
+    : role === "asha_worker" ? "ASHA Worker"
+    : role === "receptionist" ? "Receptionist"
+    : "Staff";
+  const roleColor =
+    role === "chief_doctor" ? "#087E7B"
+    : role === "doctor" ? "#087E7B"
+    : role === "asha_worker" ? "#B66A00"
+    : "#6B3FA0";
+  const roleBg =
+    role === "chief_doctor" ? "#E6F5F3"
+    : role === "doctor" ? "#E6F5F3"
+    : role === "asha_worker" ? "#FFF4E5"
+    : "#F3EEFF";
 
   return (
     <View style={commonStyles.screen}>
@@ -68,9 +77,9 @@ export default function OperationsHome() {
                 </View>
               </View>
               <Text style={styles.profileText}>
-                {role === "doctor"
+                {(role === "doctor" || role === "chief_doctor")
                   ? `${doctor?.specialization || "Medical Officer"} · ID: ${doctor?.doctorId || "DOC"}`
-                  : `${healthWorker?.designation || "ASHA Worker"} · ${healthWorker?.assignedVillage || "Village Sector"}`}
+                  : `${healthWorker?.designation || "ASHA Worker"} · ${user?.facilityName || ""}`}
               </Text>
             </View>
             <Pressable
@@ -126,7 +135,25 @@ export default function OperationsHome() {
           <MaterialIcons name="chevron-right" size={21} color="#2369A5" />
         </Pressable>
 
-        <PrimaryButton label={t("registerPatient")} icon="person-add" onPress={() => router.push("/register" as never)} />
+        {/* Chief Doctor Medicine Stock Alert */}
+        {role === "chief_doctor" && medicineAlerts > 0 && (
+          <View style={styles.chiefMedicineAlert}>
+            <MaterialIcons name="warning-amber" size={24} color="#B42318" />
+            <View style={styles.flex}>
+              <Text style={styles.chiefAlertTitle}>🚨 CRITICAL MEDICINE ALERT (bsdk medicine illa)</Text>
+              <Text style={styles.chiefAlertText}>
+                {state.medicines
+                  .filter((m) => m.stock <= m.minimumStock)
+                  .map((m) => `${m.name} (stock: ${m.stock}/${m.minimumStock} ${m.unit})`)
+                  .join(" · ")}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {(role === "asha_worker" || role === "receptionist") && (
+          <PrimaryButton label={t("registerPatient")} icon="person-add" onPress={() => router.push("/register" as never)} />
+        )}
 
         <View style={styles.metrics}>
           <Metric icon="groups" value={String(activeQueue.length)} label={t("waitTime")} tone="#2369A5" />
@@ -209,6 +236,9 @@ const styles = StyleSheet.create({
   dashboardLink: { alignItems: "center", backgroundColor: "#EAF4FF", borderRadius: 14, flexDirection: "row", gap: 9, marginBottom: 10, padding: 11 },
   dashboardLinkTitle: { color: "#2369A5", fontSize: 13, fontWeight: "900" },
   dashboardLinkText: { color: "#4C78A0", fontSize: 11, fontWeight: "700", marginTop: 2 },
+  chiefMedicineAlert: { alignItems: "center", backgroundColor: "#FDECEC", borderColor: "#F5C2C2", borderWidth: 1.5, borderRadius: 14, flexDirection: "row", gap: 10, marginBottom: 12, padding: 12 },
+  chiefAlertTitle: { color: "#B42318", fontSize: 13, fontWeight: "900" },
+  chiefAlertText: { color: "#7A1C14", fontSize: 12, fontWeight: "700", marginTop: 2 },
   profileCard: { alignItems: "center", backgroundColor: "#E6F5F3", borderRadius: 15, flexDirection: "row", gap: 10, marginBottom: 12, padding: 12, borderWidth: 1, borderColor: "#CFE9E4" },
   avatar: { alignItems: "center", backgroundColor: "#087E7B", borderRadius: 999, height: 42, justifyContent: "center", width: 42 },
   avatarText: { color: "#FFFFFF", fontSize: 16, fontWeight: "900" },

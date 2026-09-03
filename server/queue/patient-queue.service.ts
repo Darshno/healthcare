@@ -12,7 +12,7 @@ export class PatientQueueService {
   ) {}
 
   async enqueue(data: {
-    facilityId: number;
+    hospitalId: number;
     patientId: number;
     serviceType: string;
     careCategory: "emergency" | "urgent" | "priority" | "routine";
@@ -25,40 +25,40 @@ export class PatientQueueService {
     });
   }
 
-  async callNext(facilityId: number, serviceType?: string) {
-    return this.queue.add("call_next", { facilityId, serviceType }, {
+  async callNext(hospitalId: number, serviceType?: string) {
+    return this.queue.add("call_next", { hospitalId, serviceType }, {
       removeOnComplete: true,
     });
   }
 
-  async call(facilityId: number, patientId: number) {
-    return this.queue.add("call", { facilityId, patientId }, {
+  async call(hospitalId: number, patientId: number) {
+    return this.queue.add("call", { hospitalId, patientId }, {
       removeOnComplete: true,
     });
   }
 
-  async complete(facilityId: number, patientId: number) {
-    return this.queue.add("complete", { facilityId, patientId }, {
+  async complete(hospitalId: number, patientId: number) {
+    return this.queue.add("complete", { hospitalId, patientId }, {
       removeOnComplete: true,
     });
   }
 
-  async transfer(facilityId: number, patientId: number, targetFacilityId: number) {
-    return this.queue.add("transfer", { facilityId, patientId, targetFacilityId }, {
+  async transfer(hospitalId: number, patientId: number, targetHospitalId: number) {
+    return this.queue.add("transfer", { hospitalId, patientId, targetHospitalId }, {
       priority: this.getPriorityValue("urgent"),
       removeOnComplete: true,
     });
   }
 
-  async pause(facilityId: number, patientId: number) {
-    return this.queue.add("pause", { facilityId, patientId }, {
+  async pause(hospitalId: number, patientId: number) {
+    return this.queue.add("pause", { hospitalId, patientId }, {
       removeOnComplete: true,
     });
   }
 
-  async getQueueStats(facilityId: number) {
+  async getQueueStats(hospitalId: number) {
     const counts = await this.queue.getJobCounts();
-    return { facilityId, ...counts };
+    return { hospitalId, ...counts };
   }
 
   private getPriorityValue(category: string): number {

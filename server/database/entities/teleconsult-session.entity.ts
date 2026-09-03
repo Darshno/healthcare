@@ -17,7 +17,7 @@ export class TeleconsultSession {
   patientId: number;
 
   @Column({ type: "int" })
-  facilityId: number;
+  hospitalId: number;
 
   @Column({ type: "int", nullable: true })
   clinicianId: number | null;

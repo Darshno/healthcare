@@ -8,7 +8,7 @@ import {
   JoinColumn,
   OneToMany,
 } from "typeorm";
-import { Facility } from "./facility.entity";
+import { Hospital } from "./hospital.entity";
 import { QueueEntry } from "./queue-entry.entity";
 
 export type CareCategory = "emergency" | "urgent" | "priority" | "routine";
@@ -31,7 +31,7 @@ export class Patient {
   gender: string | null;
 
   @Column({ type: "int" })
-  facilityId: number;
+  hospitalId: number;
 
   @Column({ type: "text", nullable: true })
   guardianName: string | null;
@@ -57,9 +57,9 @@ export class Patient {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @ManyToOne(() => Facility, (f) => f.patients, { onDelete: "CASCADE" })
-  @JoinColumn({ name: "facilityId" })
-  facility: Facility;
+  @ManyToOne(() => Hospital, (h) => h.patients, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "hospitalId" })
+  hospital: Hospital;
 
   @OneToMany(() => QueueEntry, (qe) => qe.patient)
   queueEntries: QueueEntry[];

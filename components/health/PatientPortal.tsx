@@ -39,7 +39,7 @@ const EMERGENCY_SYMPTOMS = [
 
 export function PatientPortal() {
   const insets = useSafeAreaInsets();
-  const { user, patient, signOut } = useUserAuth();
+  const { user, signOut } = useUserAuth();
   const {
     state,
     joinQueue,
@@ -56,15 +56,16 @@ export function PatientPortal() {
 
   // Determine current active patient from user profile or fallback to first patient
   const activePatient: Patient = useMemo(() => {
-    if (patient?.patientId) {
-      const found = state.patients.find((p) => p.id === patient.patientId);
+    const customPatientId = (user as any)?.patientId;
+    if (customPatientId) {
+      const found = state.patients.find((p) => p.id === customPatientId);
       if (found) return found;
     }
     return (
       state.patients.find((p) => p.name.toLowerCase() === (user?.name || "").toLowerCase()) ||
       state.patients[0]
     );
-  }, [state.patients, patient, user]);
+  }, [state.patients, user]);
 
   // Active Queue Entry for this patient
   const patientQueue = useMemo(() => {

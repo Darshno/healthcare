@@ -168,6 +168,7 @@ export function queueEntryFromSnapshot(row: Record<string, unknown>): QueueEntry
   const careRaw = String(row.careCategory ?? "routine") as Priority;
   return {
     id: String(patientId),
+    facilityId: String(row.facilityId ?? "1"),
     patientId: String(patientId),
     service: typeof row.serviceType === "string" ? row.serviceType : "General OPD",
     arrivedAt: typeof row.enteredAt === "number" ? row.enteredAt : Date.now(),

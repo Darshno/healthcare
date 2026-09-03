@@ -13,27 +13,27 @@ export class TeleconsultQueueService {
 
   async schedule(data: {
     sessionId: number;
-    facilityId: number;
+    hospitalId: number;
     patientId: number;
     clinicianId?: number;
   }) {
     return this.queue.add("schedule", data, { removeOnComplete: true });
   }
 
-  async start(sessionId: number, facilityId: number, clinicianId: number) {
-    return this.queue.add("start", { sessionId, facilityId, clinicianId }, {
+  async start(sessionId: number, hospitalId: number, clinicianId: number) {
+    return this.queue.add("start", { sessionId, hospitalId, clinicianId }, {
       removeOnComplete: true,
     });
   }
 
-  async end(sessionId: number, facilityId: number) {
-    return this.queue.add("end", { sessionId, facilityId }, {
+  async end(sessionId: number, hospitalId: number) {
+    return this.queue.add("end", { sessionId, hospitalId }, {
       removeOnComplete: true,
     });
   }
 
-  async cancel(sessionId: number, facilityId: number) {
-    return this.queue.add("cancel", { sessionId, facilityId }, {
+  async cancel(sessionId: number, hospitalId: number) {
+    return this.queue.add("cancel", { sessionId, hospitalId }, {
       removeOnComplete: true,
     });
   }

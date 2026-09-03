@@ -18,7 +18,7 @@ export class AuthService {
   async validateUser(openId: string): Promise<User> {
     let user = await this.userRepo.findOne({ where: { openId } });
     if (!user) {
-      user = this.userRepo.create({ openId });
+      user = this.userRepo.create({ openId, hospitalId: 1 });
       user = await this.userRepo.save(user);
     }
     user.lastSignedIn = new Date();
@@ -54,7 +54,7 @@ export class AuthService {
     return this.userRepo.findOne({ where: { id: userId } });
   }
 
-  async updateRole(userId: number, role: "user" | "admin"): Promise<User> {
+  async updateRole(userId: number, role: "chief_doc" | "doctor" | "asha" | "receptionist" | "admin"): Promise<User> {
     await this.userRepo.update(userId, { role });
     return this.userRepo.findOne({ where: { id: userId } }) as Promise<User>;
   }

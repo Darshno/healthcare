@@ -15,7 +15,7 @@ export class TriageResult {
   patientId: number;
 
   @Column({ type: "int" })
-  facilityId: number;
+  hospitalId: number;
 
   @Column({ type: "varchar", length: 64 })
   careCategory: string;

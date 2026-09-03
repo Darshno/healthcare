@@ -20,7 +20,7 @@ export class SyncOperation {
   userId: number;
 
   @Column({ type: "int", nullable: true })
-  facilityId: number | null;
+  hospitalId: number | null;
 
   @Column({ type: "varchar", length: 96 })
   operationType: string;

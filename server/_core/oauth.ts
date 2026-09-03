@@ -23,6 +23,7 @@ async function syncUser(userInfo: {
   const lastSignedIn = new Date();
   await upsertUser({
     openId: userInfo.openId,
+    hospitalId: 1,
     name: userInfo.name || null,
     email: userInfo.email ?? null,
     loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,

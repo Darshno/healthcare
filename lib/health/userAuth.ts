@@ -1,6 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export type UserRole = "doctor" | "health_worker" | "patient";
+// ──────────────────────────────────────────────────────────────────────────────
+// Types
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type UserRole = "chief_doctor" | "doctor" | "asha_worker" | "receptionist";
 
 export type DoctorSpecialization =
   | "General Medicine (MBBS)"
@@ -19,37 +23,30 @@ export type BaseUserProfile = {
   email?: string;
   passcodeHash?: string;
   facilityName: string;
-  facilityId: number;
+  facilityId: string; // hospital UUID from hospitalRegistry
   createdAt: number;
   lastLoginAt: number;
 };
 
 export type DoctorProfile = BaseUserProfile & {
-  role: "doctor";
-  doctorId: string; // e.g. "MCI-48201"
+  role: "chief_doctor" | "doctor";
+  doctorId: string;
   specialization: DoctorSpecialization | string;
 };
 
 export type HealthWorkerProfile = BaseUserProfile & {
-  role: "health_worker";
-  workerId: string; // e.g. "ASHA-101"
-  designation: "ASHA Facilitator" | "ANM Community Nurse" | "Clinic Health Helper" | "Anganwadi Worker";
+  role: "asha_worker" | "receptionist";
+  workerId: string;
+  designation: "ASHA Worker" | "ANM Community Nurse" | "Receptionist" | "Anganwadi Worker";
   assignedVillage?: string;
 };
 
+// Patient is no longer a user role in auth — kept for backward compat
 export type PatientProfile = BaseUserProfile & {
-  role: "patient";
-  patientId: string; // linked to Patient.id e.g. "p-101"
-  localId: string; // e.g. "RH-1024"
-  abhaId: string; // e.g. "91-4820-9912-3401"
-  age: number;
-  gender: "female" | "male" | "other";
-  bloodGroup?: string;
-  allergies?: string[];
-  careTags?: ("maternal" | "child" | "chronic" | "general")[];
+  role: never;
 };
 
-export type UserProfile = DoctorProfile | HealthWorkerProfile | PatientProfile;
+export type UserProfile = DoctorProfile | HealthWorkerProfile;
 
 export type CreateUserInput = {
   name: string;
@@ -57,8 +54,8 @@ export type CreateUserInput = {
   phone?: string;
   email?: string;
   passcode?: string;
-  facilityName?: string;
-  facilityId?: number;
+  facilityName: string;
+  facilityId: string;
   // Doctor fields
   doctorId?: string;
   specialization?: string;
@@ -66,20 +63,22 @@ export type CreateUserInput = {
   workerId?: string;
   designation?: HealthWorkerProfile["designation"];
   assignedVillage?: string;
-  // Patient fields
-  patientId?: string;
-  localId?: string;
-  abhaId?: string;
-  age?: number;
-  gender?: "female" | "male" | "other";
-  bloodGroup?: string;
 };
 
-const USER_PROFILE_KEY = "rural-health-access.user-profile.v2";
-const USER_REGISTRY_KEY = "rural-health-access.user-registry.v2";
+// Empty preset — no demo users
+export const PRESET_USERS: UserProfile[] = [];
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Storage Keys  (bumped to v3 so old v2 data is ignored)
+// ──────────────────────────────────────────────────────────────────────────────
+
+const USER_PROFILE_KEY = "rural-health-access.user-profile.v3";
+const USER_REGISTRY_KEY = "rural-health-access.user-registry.v3";
 const PORTAL_TOKEN_KEY = "rural-health-access.portal-token";
 
-export const DEFAULT_DEMO_PIN = "1234";
+// ──────────────────────────────────────────────────────────────────────────────
+// Hashing helpers
+// ──────────────────────────────────────────────────────────────────────────────
 
 function simpleHash(s: string): string {
   let h = 5381;
@@ -97,149 +96,9 @@ export function verifyPasscode(entered: string, storedHash: string): boolean {
   return simpleHash(entered.trim()) === storedHash;
 }
 
-const DEMO_PIN_HASH = hashPasscode(DEFAULT_DEMO_PIN);
-
-// ─── Preset Demo Accounts ──────────────────────────────────────────────────────
-
-export const PRESET_USERS: UserProfile[] = [
-  // ─── Doctors ───
-  {
-    id: "doc-101",
-    name: "Dr. Asha Verma",
-    role: "doctor",
-    doctorId: "MCI-48201",
-    specialization: "Community Medicine / MO",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "98765 43210",
-    email: "dr.asha@phc.in",
-    passcodeHash: DEMO_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 30,
-    lastLoginAt: Date.now(),
-  },
-  {
-    id: "doc-102",
-    name: "Dr. Rajesh Gupta",
-    role: "doctor",
-    doctorId: "MCI-29184",
-    specialization: "Pediatrics / Child Health",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "98765 11223",
-    email: "dr.rajesh@phc.in",
-    passcodeHash: DEMO_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 15,
-    lastLoginAt: Date.now(),
-  },
-  {
-    id: "doc-103",
-    name: "Dr. Meenakshi Iyer",
-    role: "doctor",
-    doctorId: "MCI-67092",
-    specialization: "Obstetrics & Gynecology",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "98765 88990",
-    email: "dr.meenakshi@phc.in",
-    passcodeHash: DEMO_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 10,
-    lastLoginAt: Date.now(),
-  },
-
-  // ─── Health Helpers / ASHA ───
-  {
-    id: "hw-201",
-    name: "Sunita Sharma",
-    role: "health_worker",
-    workerId: "ASHA-101",
-    designation: "ASHA Facilitator",
-    assignedVillage: "Nandipur Ward 4",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "98765 22334",
-    email: "sunita.asha@phc.in",
-    passcodeHash: DEMO_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 60,
-    lastLoginAt: Date.now(),
-  },
-  {
-    id: "hw-202",
-    name: "Priya Patel",
-    role: "health_worker",
-    workerId: "ANM-204",
-    designation: "ANM Community Nurse",
-    assignedVillage: "Rampur East",
-    facilityName: "Rampur Community Health Centre",
-    facilityId: 2,
-    phone: "98765 55667",
-    email: "priya.anm@chc.in",
-    passcodeHash: DEMO_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 45,
-    lastLoginAt: Date.now(),
-  },
-
-  // ─── Patients ───
-  {
-    id: "pat-301",
-    name: "Asha Devi",
-    role: "patient",
-    patientId: "p-101",
-    localId: "RH-1024",
-    abhaId: "91-4820-9912-3401",
-    age: 27,
-    gender: "female",
-    bloodGroup: "B+",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "98765 18120",
-    email: "asha.devi@gmail.com",
-    careTags: ["maternal"],
-    allergies: ["None recorded"],
-    passcodeHash: DEMO_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 90,
-    lastLoginAt: Date.now(),
-  },
-  {
-    id: "pat-302",
-    name: "Savitri Bai",
-    role: "patient",
-    patientId: "p-103",
-    localId: "RH-1026",
-    abhaId: "91-7712-3390-1124",
-    age: 62,
-    gender: "female",
-    bloodGroup: "O+",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "97123 10130",
-    email: "savitri.bai@gmail.com",
-    careTags: ["chronic"],
-    allergies: ["Penicillin"],
-    passcodeHash: DEMO_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 120,
-    lastLoginAt: Date.now(),
-  },
-  {
-    id: "pat-303",
-    name: "Imran Khan",
-    role: "patient",
-    patientId: "p-104",
-    localId: "RH-1027",
-    abhaId: "91-5544-2211-8890",
-    age: 48,
-    gender: "male",
-    bloodGroup: "A+",
-    facilityName: "Nandipur Primary Health Centre",
-    facilityId: 1,
-    phone: "99887 84200",
-    email: "imran.khan@gmail.com",
-    careTags: ["general", "chronic"],
-    allergies: ["None recorded"],
-    passcodeHash: DEMO_PIN_HASH,
-    createdAt: Date.now() - 86400000 * 40,
-    lastLoginAt: Date.now(),
-  },
-];
+// ──────────────────────────────────────────────────────────────────────────────
+// Portal token sync
+// ──────────────────────────────────────────────────────────────────────────────
 
 function safeBase64Encode(str: string): string {
   if (typeof btoa === "function") return btoa(str);
@@ -267,6 +126,10 @@ function removePortalToken() {
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// CRUD
+// ──────────────────────────────────────────────────────────────────────────────
+
 export async function getStoredUserProfile(): Promise<UserProfile | null> {
   try {
     const raw = await AsyncStorage.getItem(USER_PROFILE_KEY);
@@ -280,18 +143,10 @@ export async function getStoredUserProfile(): Promise<UserProfile | null> {
 export async function getRegisteredUsers(): Promise<UserProfile[]> {
   try {
     const raw = await AsyncStorage.getItem(USER_REGISTRY_KEY);
-    if (!raw) return PRESET_USERS;
-    const parsed = JSON.parse(raw) as UserProfile[];
-    const existingIds = new Set(parsed.map((u) => u.id.toLowerCase()));
-    const merged = [...parsed];
-    for (const preset of PRESET_USERS) {
-      if (!existingIds.has(preset.id.toLowerCase())) {
-        merged.push(preset);
-      }
-    }
-    return merged;
+    if (!raw) return [];
+    return JSON.parse(raw) as UserProfile[];
   } catch {
-    return PRESET_USERS;
+    return [];
   }
 }
 
@@ -303,7 +158,7 @@ export async function getRegisteredUsersByRole(role: UserRole): Promise<UserProf
 export async function saveRegisteredUser(profile: UserProfile): Promise<void> {
   try {
     const all = await getRegisteredUsers();
-    const updated = [profile, ...all.filter((u) => u.id.toLowerCase() !== profile.id.toLowerCase())];
+    const updated = [profile, ...all.filter((u) => u.id !== profile.id)];
     await AsyncStorage.setItem(USER_REGISTRY_KEY, JSON.stringify(updated));
   } catch (error) {
     console.error("Failed to save registered user:", error);
@@ -316,7 +171,6 @@ export async function storeUserSession(profile: UserProfile): Promise<void> {
     await AsyncStorage.setItem(USER_PROFILE_KEY, JSON.stringify(updatedProfile));
     await saveRegisteredUser(updatedProfile);
 
-    // Sync token with portal auth
     const syntheticToken = safeBase64Encode(
       JSON.stringify({
         openId: profile.id,
@@ -344,67 +198,48 @@ export async function clearUserSession(): Promise<void> {
 export async function createUserProfile(input: CreateUserInput): Promise<UserProfile> {
   const timestamp = Date.now();
   const id = `${input.role.slice(0, 3)}-${timestamp.toString(36)}`;
-  const facilityName = input.facilityName?.trim() || "Nandipur Primary Health Centre";
-  const facilityId = input.facilityId ?? 1;
-  const passcodeHash = input.passcode?.trim() ? hashPasscode(input.passcode.trim()) : DEMO_PIN_HASH;
 
+  if (!input.facilityName?.trim()) throw new Error("Facility name is required.");
+  if (!input.facilityId?.trim()) throw new Error("Hospital is required.");
+  if (!input.passcode?.trim()) throw new Error("A passcode is required.");
+
+  const passcodeHash = hashPasscode(input.passcode.trim());
   let profile: UserProfile;
 
-  if (input.role === "doctor") {
-    const formattedName = input.name.trim().startsWith("Dr.") ? input.name.trim() : `Dr. ${input.name.trim()}`;
+  if (input.role === "chief_doctor" || input.role === "doctor") {
+    const formattedName = input.name.trim().startsWith("Dr.")
+      ? input.name.trim()
+      : `Dr. ${input.name.trim()}`;
     profile = {
       id,
       name: formattedName,
-      role: "doctor",
+      role: input.role,
       doctorId: input.doctorId?.trim() || `DOC-${Math.floor(1000 + Math.random() * 9000)}`,
       specialization: input.specialization || "General Medicine (MBBS)",
-      facilityName,
-      facilityId,
+      facilityName: input.facilityName.trim(),
+      facilityId: input.facilityId,
       phone: input.phone?.trim(),
       email: input.email?.trim(),
       passcodeHash,
       createdAt: timestamp,
       lastLoginAt: timestamp,
-    };
-  } else if (input.role === "health_worker") {
-    profile = {
-      id,
-      name: input.name.trim(),
-      role: "health_worker",
-      workerId: input.workerId?.trim() || `ASHA-${Math.floor(100 + Math.random() * 900)}`,
-      designation: input.designation || "ASHA Facilitator",
-      assignedVillage: input.assignedVillage?.trim() || "Nandipur Area",
-      facilityName,
-      facilityId,
-      phone: input.phone?.trim(),
-      email: input.email?.trim(),
-      passcodeHash,
-      createdAt: timestamp,
-      lastLoginAt: timestamp,
-    };
+    } as DoctorProfile;
   } else {
-    // Patient
-    const randNum = Math.floor(1000 + Math.random() * 9000);
     profile = {
       id,
       name: input.name.trim(),
-      role: "patient",
-      patientId: input.patientId || `p-${randNum}`,
-      localId: input.localId || `RH-${randNum}`,
-      abhaId: input.abhaId || `91-${randNum}-4412-8821`,
-      age: input.age || 30,
-      gender: input.gender || "female",
-      bloodGroup: input.bloodGroup || "O+",
-      facilityName,
-      facilityId,
+      role: input.role,
+      workerId: input.workerId?.trim() || `WORK-${Math.floor(100 + Math.random() * 900)}`,
+      designation: input.designation || (input.role === "receptionist" ? "Receptionist" : "ASHA Worker"),
+      assignedVillage: input.assignedVillage?.trim(),
+      facilityName: input.facilityName.trim(),
+      facilityId: input.facilityId,
       phone: input.phone?.trim(),
       email: input.email?.trim(),
-      careTags: ["general"],
-      allergies: ["None recorded"],
       passcodeHash,
       createdAt: timestamp,
       lastLoginAt: timestamp,
-    };
+    } as HealthWorkerProfile;
   }
 
   await storeUserSession(profile);
@@ -422,27 +257,26 @@ export async function authenticateUser(
   const found = all.find((u) => {
     if (targetRole && u.role !== targetRole) return false;
     const matchesName = u.name.toLowerCase() === query || u.name.toLowerCase().includes(query);
-    const matchesEmail = u.email?.toLowerCase() === query;
     const matchesPhone = u.phone?.replace(/\s+/g, "") === query.replace(/\s+/g, "");
 
     let matchesId = false;
-    if (u.role === "doctor") matchesId = u.doctorId.toLowerCase() === query;
-    else if (u.role === "health_worker") matchesId = u.workerId.toLowerCase() === query;
-    else if (u.role === "patient") matchesId = u.localId.toLowerCase() === query || u.abhaId.toLowerCase() === query || u.patientId.toLowerCase() === query;
+    if (u.role === "chief_doctor" || u.role === "doctor") {
+      matchesId = (u as DoctorProfile).doctorId.toLowerCase() === query;
+    } else {
+      matchesId = (u as HealthWorkerProfile).workerId.toLowerCase() === query;
+    }
 
-    return matchesName || matchesEmail || matchesPhone || matchesId;
+    return matchesName || matchesPhone || matchesId;
   });
 
   if (!found) {
     throw new Error(
-      `No user profile found matching "${identifier}". Please check your details or create a new account.`,
+      `No user found matching "${identifier}". Check your details or register a new account.`,
     );
   }
 
   if (found.passcodeHash) {
-    if (!passcode?.trim()) {
-      throw new Error("Please enter your PIN or passcode.");
-    }
+    if (!passcode?.trim()) throw new Error("Please enter your PIN or passcode.");
     if (!verifyPasscode(passcode, found.passcodeHash)) {
       throw new Error("Incorrect PIN / passcode. Please try again.");
     }

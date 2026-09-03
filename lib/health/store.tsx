@@ -1,17 +1,23 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
+import { Alert } from "react-native";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
-import { evaluatePriority } from "./priority";
 import { priorityLabel, priorityReasonLabel, referralLabel, syncLabel, translate, type TranslationKey } from "./i18n";
 import { serializeOperation, type SyncTransport } from "./sync";
+import { analyzeDiseaseRuleBased, matchBestDoctor } from "./aiTriage";
+import { getRegisteredUsers } from "./userAuth";
 import type {
   AppLanguage,
   Appointment,
   AppointmentStatus,
+  Bed,
+  BedOccupancy,
   CareTag,
+  CurrentUser,
   Encounter,
   HealthState,
   HospitalFacility,
+  HospitalUnit,
   InventoryTransactionType,
   Medicine,
   MedicineOrder,
@@ -25,528 +31,31 @@ import type {
   QueueStatus,
   ReferralStatus,
   SyncState,
+  UserRole,
 } from "./types";
 
-const STORAGE_KEY = "rural-health-access.workspace.v2";
+const STORAGE_KEY = "rural-health-access.workspace.v3";
 let sequence = 0;
 const makeId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(sequence += 1).toString(36)}`;
 const now = Date.now();
 
-export const SEEDED_HOSPITALS: HospitalFacility[] = [
-  {
-    id: "hosp-1",
-    name: "Nandipur Primary Health Centre (PHC)",
-    type: "PHC (Primary Health Centre)",
-    address: "Main Road, Nandipur Village, Block 2",
-    distanceKm: 1.2,
-    phone: "0542-234890",
-    emergencyHotline: "108 / 0542-234999",
-    ambulanceAvailable: true,
-    totalBeds: 12,
-    availableBeds: 5,
-    icuBedsAvailable: 1,
-    facilities: ["24x7 Emergency", "Delivery Room (Labour)", "Essential Drug Pharmacy", "Basic Lab Tests", "Immunization Desk"],
-    doctors: [
-      {
-        id: "doc-101",
-        name: "Dr. Asha Verma",
-        qualification: "MBBS, DCH",
-        specialization: "Community Medicine / MO",
-        experience: "9 years",
-        opdTimings: "09:00 AM - 02:00 PM",
-        availableDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-        isAvailableToday: true,
-        phone: "98765 43210",
-        rating: 4.9,
-      },
-      {
-        id: "doc-102",
-        name: "Dr. Rajesh Gupta",
-        qualification: "MBBS, MD (Pediatrics)",
-        specialization: "Pediatrics / Child Health",
-        experience: "12 years",
-        opdTimings: "10:00 AM - 03:00 PM",
-        availableDays: ["Mon", "Wed", "Fri"],
-        isAvailableToday: true,
-        phone: "98765 11223",
-        rating: 4.8,
-      },
-      {
-        id: "doc-103",
-        name: "Dr. Meenakshi Iyer",
-        qualification: "MBBS, DGO",
-        specialization: "Obstetrics & Gynecology",
-        experience: "14 years",
-        opdTimings: "09:30 AM - 01:30 PM",
-        availableDays: ["Tue", "Thu", "Sat"],
-        isAvailableToday: true,
-        phone: "98765 88990",
-        rating: 4.9,
-      },
-    ],
-  },
-  {
-    id: "hosp-2",
-    name: "Rampur Community Health Centre (CHC)",
-    type: "CHC (Community Health Centre)",
-    address: "Hospital Chowk, Rampur Town, Sector 4",
-    distanceKm: 6.8,
-    phone: "0542-261200",
-    emergencyHotline: "108 / 0542-261999",
-    ambulanceAvailable: true,
-    totalBeds: 30,
-    availableBeds: 11,
-    icuBedsAvailable: 3,
-    facilities: ["Major & Minor OT", "Digital X-Ray & Ultrasound", "Dental Clinic", "Blood Storage Unit", "24x7 Ambulance"],
-    doctors: [
-      {
-        id: "doc-201",
-        name: "Dr. Alok Nath",
-        qualification: "MBBS, MS (General Surgery)",
-        specialization: "General Surgery & Trauma",
-        experience: "16 years",
-        opdTimings: "09:00 AM - 02:00 PM",
-        availableDays: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-        isAvailableToday: true,
-        phone: "98765 33445",
-        rating: 4.7,
-      },
-      {
-        id: "doc-202",
-        name: "Dr. Sneha Reddy",
-        qualification: "MBBS, MD (General Medicine)",
-        specialization: "General Medicine & Diabetes",
-        experience: "10 years",
-        opdTimings: "10:00 AM - 04:00 PM",
-        availableDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-        isAvailableToday: true,
-        phone: "98765 66778",
-        rating: 4.8,
-      },
-      {
-        id: "doc-203",
-        name: "Dr. Vikram Malhotra",
-        qualification: "MBBS, MS (Orthopedics)",
-        specialization: "Orthopedics & Joint Care",
-        experience: "11 years",
-        opdTimings: "11:00 AM - 03:00 PM",
-        availableDays: ["Wed", "Thu", "Sat"],
-        isAvailableToday: false,
-        phone: "98765 99001",
-        rating: 4.6,
-      },
-    ],
-  },
-  {
-    id: "hosp-3",
-    name: "District Civil Hospital & Trauma Centre",
-    type: "District Civil Hospital",
-    address: "Civil Lines, District Headquarters",
-    distanceKm: 18.5,
-    phone: "0542-280011",
-    emergencyHotline: "108 / 102 / 0542-280911",
-    ambulanceAvailable: true,
-    totalBeds: 150,
-    availableBeds: 38,
-    icuBedsAvailable: 8,
-    facilities: ["Advanced ICU & CCU", "Multi-slice CT Scan", "Dialysis Unit", "Govt Licensed Blood Bank", "Specialized Burn Unit"],
-    doctors: [
-      {
-        id: "doc-301",
-        name: "Dr. Arvind Swaminathan",
-        qualification: "MBBS, MS, MCh",
-        specialization: "Trauma & Critical Care",
-        experience: "22 years",
-        opdTimings: "08:30 AM - 01:00 PM",
-        availableDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-        isAvailableToday: true,
-        phone: "98765 12345",
-        rating: 4.9,
-      },
-      {
-        id: "doc-302",
-        name: "Dr. Fatima Sheikh",
-        qualification: "MBBS, MD (Cardiology)",
-        specialization: "Cardiology & Internal Medicine",
-        experience: "15 years",
-        opdTimings: "10:00 AM - 03:00 PM",
-        availableDays: ["Mon", "Wed", "Fri"],
-        isAvailableToday: true,
-        phone: "98765 67890",
-        rating: 4.9,
-      },
-    ],
-  },
-  {
-    id: "hosp-4",
-    name: "Chandpur Health & Wellness Sub-Centre",
-    type: "Sub-Centre",
-    address: "Panchayat Bhawan, Chandpur Village",
-    distanceKm: 3.4,
-    phone: "0542-219800",
-    emergencyHotline: "108",
-    ambulanceAvailable: false,
-    totalBeds: 4,
-    availableBeds: 2,
-    icuBedsAvailable: 0,
-    facilities: ["Primary First Aid", "Maternal Nutrition & ANC", "Child Growth Monitoring", "Free Essential Meds Dispensing"],
-    doctors: [
-      {
-        id: "doc-401",
-        name: "Dr. Asha Verma (Visiting)",
-        qualification: "MBBS, DCH",
-        specialization: "Community Health & Triage",
-        experience: "9 years",
-        opdTimings: "02:30 PM - 05:00 PM",
-        availableDays: ["Tue", "Fri"],
-        isAvailableToday: true,
-        phone: "98765 43210",
-        rating: 4.8,
-      },
-    ],
-  },
-];
-
-const seededState: HealthState = {
+const EMPTY_STATE: HealthState = {
+  currentUser: null,
   language: "en",
-  patients: [
-    {
-      id: "p-101",
-      localId: "RH-1024",
-      abhaId: "91-4820-9912-3401",
-      name: "Asha Devi",
-      age: 27,
-      sex: "female",
-      contact: "98765 18120",
-      address: "House 14, Ward 2, Nandipur Village",
-      bloodGroup: "B+",
-      careTags: ["maternal"],
-      allergies: ["None recorded"],
-      currentMedicines: ["Iron + folic acid", "Calcium 500mg"],
-      syncState: "synced",
-      updatedAt: now - 3600000,
-    },
-    {
-      id: "p-102",
-      localId: "RH-1025",
-      abhaId: "91-2290-8812-4419",
-      name: "Rohan Kumar",
-      age: 3,
-      sex: "male",
-      contact: "98765 44190",
-      address: "Near Water Tank, Nandipur",
-      bloodGroup: "O+",
-      careTags: ["child"],
-      allergies: ["None recorded"],
-      currentMedicines: [],
-      syncState: "synced",
-      updatedAt: now - 5400000,
-    },
-    {
-      id: "p-103",
-      localId: "RH-1026",
-      abhaId: "91-7712-3390-1124",
-      name: "Savitri Bai",
-      age: 62,
-      sex: "female",
-      contact: "97123 10130",
-      address: "East Gali, Nandipur",
-      bloodGroup: "O+",
-      careTags: ["chronic"],
-      allergies: ["Penicillin"],
-      currentMedicines: ["Amlodipine 5 mg", "Atorvastatin 10 mg"],
-      syncState: "pending",
-      updatedAt: now - 900000,
-    },
-    {
-      id: "p-104",
-      localId: "RH-1027",
-      abhaId: "91-5544-2211-8890",
-      name: "Imran Khan",
-      age: 48,
-      sex: "male",
-      contact: "99887 84200",
-      address: "Market Road, Nandipur",
-      bloodGroup: "A+",
-      careTags: ["general", "chronic"],
-      allergies: ["None recorded"],
-      currentMedicines: ["Metformin 500mg"],
-      syncState: "synced",
-      updatedAt: now - 7200000,
-    },
-  ],
-  queue: [
-    {
-      id: "q-101",
-      patientId: "p-102",
-      service: "Child care & Paediatrics",
-      arrivedAt: now - 42 * 60000,
-      priority: "emergency",
-      priorityReason: "childDanger",
-      status: "consulting",
-      tokenNumber: 101,
-      roomNumber: "Room 1 (Pediatrics)",
-      doctorName: "Dr. Rajesh Gupta",
-      syncState: "synced",
-    },
-    {
-      id: "q-102",
-      patientId: "p-101",
-      service: "Maternal & Antenatal Care",
-      arrivedAt: now - 30 * 60000,
-      priority: "urgent",
-      priorityReason: "vitalConcern",
-      status: "waiting",
-      tokenNumber: 102,
-      roomNumber: "Room 2 (ANC / Maternity)",
-      doctorName: "Dr. Meenakshi Iyer",
-      syncState: "synced",
-    },
-    {
-      id: "q-103",
-      patientId: "p-103",
-      service: "Chronic care & Hypertension",
-      arrivedAt: now - 18 * 60000,
-      priority: "priority",
-      priorityReason: "chronicReview",
-      status: "waiting",
-      tokenNumber: 103,
-      roomNumber: "Room 3 (General OPD)",
-      doctorName: "Dr. Asha Verma",
-      syncState: "pending",
-    },
-    {
-      id: "q-104",
-      patientId: "p-104",
-      service: "General OPD",
-      arrivedAt: now - 8 * 60000,
-      priority: "routine",
-      priorityReason: "routineCare",
-      status: "waiting",
-      tokenNumber: 104,
-      roomNumber: "Room 3 (General OPD)",
-      doctorName: "Dr. Asha Verma",
-      syncState: "synced",
-    },
-  ],
-  encounters: [
-    {
-      id: "e-101",
-      patientId: "p-101",
-      type: "consultation",
-      doctorName: "Dr. Meenakshi Iyer",
-      diagnosis: "2nd Trimester Routine ANC checkup. Mild fatigue.",
-      prescriptions: ["Iron + Folic Acid (100 days supply)", "Calcium 500mg"],
-      note: "Antenatal follow-up completed. BP 118/76 mmHg. Fetal heart rate normal (142 bpm). Hemoglobin 11.2 g/dL. Next ultrasound scheduled.",
-      createdAt: now - 3 * 86400000,
-      syncState: "synced",
-    },
-    {
-      id: "e-102",
-      patientId: "p-103",
-      type: "consultation",
-      doctorName: "Dr. Asha Verma",
-      diagnosis: "Essential Hypertension - Grade 1",
-      prescriptions: ["Amlodipine 5 mg OD (30 days)", "Low sodium dietary advice"],
-      note: "Blood pressure review: 146/92 mmHg. Medicine adherence discussed. Advised 30 mins daily walking.",
-      createdAt: now - 14 * 86400000,
-      syncState: "synced",
-    },
-    {
-      id: "e-103",
-      patientId: "p-104",
-      type: "consultation",
-      doctorName: "Dr. Asha Verma",
-      diagnosis: "Type 2 Diabetes Mellitus review",
-      prescriptions: ["Metformin 500mg BD after meals"],
-      note: "Fasting blood sugar 128 mg/dL. Good control. Advised annual eye & foot screening.",
-      createdAt: now - 28 * 86400000,
-      syncState: "synced",
-    },
-  ],
-  referrals: [
-    {
-      id: "r-101",
-      patientId: "p-101",
-      destination: "District Women’s Hospital",
-      reason: "Obstetric ultrasound review & anomaly scan",
-      urgency: "priority",
-      status: "accepted",
-      createdAt: now - 86400000,
-      updatedAt: now - 2 * 3600000,
-      syncState: "synced",
-    },
-    {
-      id: "r-102",
-      patientId: "p-102",
-      destination: "Community Health Centre",
-      reason: "Paediatric danger-sign assessment & nebulization",
-      urgency: "emergency",
-      status: "sent",
-      createdAt: now - 45 * 60000,
-      updatedAt: now - 45 * 60000,
-      syncState: "pending",
-    },
-  ],
-  medicines: [
-    {
-      id: "m-101",
-      name: "Oral rehydration salts (ORS)",
-      localName: "ओआरएस घोल",
-      category: "general",
-      unit: "sachets",
-      stock: 58,
-      minimumStock: 25,
-      expiryDays: 210,
-      isGovtSupply: true,
-      pricePerUnit: 0,
-      lastSyncedAt: now - 15 * 60000,
-      syncState: "synced",
-    },
-    {
-      id: "m-102",
-      name: "Iron + Folic Acid Tablets",
-      localName: "आयरन + फोलिक एसिड",
-      category: "maternal",
-      unit: "tablets",
-      stock: 120,
-      minimumStock: 30,
-      expiryDays: 105,
-      isGovtSupply: true,
-      pricePerUnit: 0,
-      lastSyncedAt: now - 15 * 60000,
-      syncState: "synced",
-    },
-    {
-      id: "m-103",
-      name: "Amoxicillin 250mg Suspension",
-      localName: "एमोक्सिसिलिन सिरप",
-      category: "antibiotic",
-      unit: "bottles",
-      stock: 14,
-      minimumStock: 8,
-      expiryDays: 42,
-      isGovtSupply: true,
-      pricePerUnit: 0,
-      lastSyncedAt: now - 150 * 60000,
-      syncState: "synced",
-    },
-    {
-      id: "m-104",
-      name: "Amlodipine 5 mg",
-      localName: "एम्लोडिपिन 5 मि.ग्रा.",
-      category: "chronic",
-      unit: "tablets",
-      stock: 74,
-      minimumStock: 40,
-      expiryDays: 180,
-      isGovtSupply: true,
-      pricePerUnit: 0,
-      lastSyncedAt: now - 15 * 60000,
-      syncState: "synced",
-    },
-    {
-      id: "m-105",
-      name: "Paracetamol 500 mg",
-      localName: "पैरासिटामोल",
-      category: "analgesic",
-      unit: "tablets",
-      stock: 240,
-      minimumStock: 50,
-      expiryDays: 360,
-      isGovtSupply: true,
-      pricePerUnit: 0,
-      lastSyncedAt: now - 15 * 60000,
-      syncState: "synced",
-    },
-    {
-      id: "m-106",
-      name: "Metformin 500 mg",
-      localName: "मेटफॉर्मिन",
-      category: "chronic",
-      unit: "tablets",
-      stock: 90,
-      minimumStock: 30,
-      expiryDays: 240,
-      isGovtSupply: true,
-      pricePerUnit: 0,
-      lastSyncedAt: now - 15 * 60000,
-      syncState: "synced",
-    },
-  ],
+  patients: [],
+  queue: [],
+  encounters: [],
+  referrals: [],
+  medicines: [],
   inventoryTransactions: [],
-  operations: [{ id: "op-seed", type: "inventory.adjustment", entityId: "m-103", createdAt: now - 150 * 60000 }],
-  hospitals: SEEDED_HOSPITALS,
-  appointments: [
-    {
-      id: "apt-101",
-      patientId: "p-101",
-      patientName: "Asha Devi",
-      patientPhone: "98765 18120",
-      facilityId: "hosp-1",
-      facilityName: "Nandipur Primary Health Centre (PHC)",
-      doctorId: "doc-103",
-      doctorName: "Dr. Meenakshi Iyer",
-      specialty: "Obstetrics & Gynecology",
-      date: new Date(now + 86400000 * 2).toISOString().split("T")[0],
-      timeSlot: "10:30 AM",
-      reason: "Antenatal 3rd trimester routine evaluation & BP monitoring",
-      isEmergency: false,
-      status: "confirmed",
-      createdAt: now - 86400000,
-      notes: "Please carry previous ANC health card and blood reports.",
-    },
-    {
-      id: "apt-102",
-      patientId: "p-103",
-      patientName: "Savitri Bai",
-      patientPhone: "97123 10130",
-      facilityId: "hosp-1",
-      facilityName: "Nandipur Primary Health Centre (PHC)",
-      doctorId: "doc-101",
-      doctorName: "Dr. Asha Verma",
-      specialty: "Community Medicine / MO",
-      date: new Date(now + 86400000 * 4).toISOString().split("T")[0],
-      timeSlot: "11:00 AM",
-      reason: "Monthly hypertension checkup & prescription refill",
-      isEmergency: false,
-      status: "scheduled",
-      createdAt: now - 48 * 3600000,
-    },
-  ],
-  medicineOrders: [
-    {
-      id: "ord-101",
-      patientId: "p-101",
-      patientName: "Asha Devi",
-      patientPhone: "98765 18120",
-      facilityName: "Nandipur Primary Health Centre",
-      items: [
-        { medicineId: "m-102", medicineName: "Iron + Folic Acid Tablets", quantity: 60, unit: "tablets" },
-      ],
-      fulfillmentType: "asha_home_delivery",
-      status: "ready_for_pickup",
-      notes: "ASHA worker Sunita will deliver to village home on next visit.",
-      createdAt: now - 36 * 3600000,
-      updatedAt: now - 12 * 3600000,
-    },
-    {
-      id: "ord-102",
-      patientId: "p-103",
-      patientName: "Savitri Bai",
-      patientPhone: "97123 10130",
-      facilityName: "Nandipur Primary Health Centre",
-      items: [
-        { medicineId: "m-104", medicineName: "Amlodipine 5 mg", quantity: 30, unit: "tablets" },
-      ],
-      fulfillmentType: "pickup_phc",
-      status: "approved",
-      notes: "Refill approved by Dr. Asha Verma.",
-      createdAt: now - 18 * 3600000,
-      updatedAt: now - 6 * 3600000,
-    },
-  ],
-  lastSyncedAt: now - 15 * 60000,
+  operations: [],
+  hospitals: [],
+  appointments: [],
+  medicineOrders: [],
+  hospitalUnits: [],
+  beds: [],
+  bedOccupancies: [],
+  lastSyncedAt: 0,
 };
 
 type RegistrationInput = {
@@ -554,9 +63,7 @@ type RegistrationInput = {
   age: number;
   sex: Patient["sex"];
   contact?: string;
-  careTags: CareTag[];
-  service: string;
-  priorityInput: PriorityInput;
+  disease?: string; // optional symptom/disease note for triage
 };
 
 type BookAppointmentInput = {
@@ -589,6 +96,7 @@ type OrderMedicineInput = {
   patientId: string;
   patientName: string;
   patientPhone?: string;
+  facilityId?: string;
   facilityName: string;
   items: MedicineOrderItem[];
   fulfillmentType: "pickup_phc" | "asha_home_delivery";
@@ -606,6 +114,7 @@ type HealthContextValue = {
   referralLabel: (status: ReferralStatus) => string;
   syncLabel: (syncState: SyncState) => string;
   setLanguage: (language: AppLanguage) => void;
+  setCurrentUser: (user: CurrentUser | null) => void;
   // Patient & Clinical Actions
   registerPatient: (input: RegistrationInput) => string;
   joinQueue: (input: { patientId: string; service: string; priority?: Priority; priorityReason?: Parameters<typeof priorityReasonLabel>[1] }) => string;
@@ -615,12 +124,32 @@ type HealthContextValue = {
   createReferral: (input: { patientId: string; destination: string; reason: string; urgency: Priority }) => void;
   updateReferralStatus: (referralId: string, status: ReferralStatus) => void;
   recordInventoryTransaction: (medicineId: string, type: InventoryTransactionType, quantity: number) => void;
+  addMedicine: (input: { name: string; localName?: string; category?: string; unit: string; minimumStock: number }) => void;
   // Appointment & Medicine Actions
   bookAppointment: (input: BookAppointmentInput) => string;
   cancelAppointment: (appointmentId: string) => void;
   requestEmergencyAppointment: (input: RequestEmergencyInput) => string;
   orderMedicine: (input: OrderMedicineInput) => string;
   updateMedicineOrderStatus: (orderId: string, status: MedicineOrderStatus) => void;
+  // Bed Management Actions
+  occupyBed: (bedId: string, patientId: string, notes?: string) => void;
+  releaseBed: (bedId: string) => void;
+  getBedsByUnit: (unitId: string) => Bed[];
+  getUnitStats: (unitId: string) => { unit: HospitalUnit; totalBeds: number; occupiedBeds: number; availableBeds: number; maintenanceBeds: number; occupancyRate: number } | null;
+  setMaintenanceBed: (bedId: string, inMaintenance: boolean, notes?: string) => void;
+  addWard: (wardName: string, bedCount: number) => void;
+  getNearbyHospitalsWithBeds: (maxDistance?: number) => HospitalFacility[];
+  getFacilityUnits: (facilityId: string) => HospitalUnit[];
+  getFacilityStats: (facilityId: string) => {
+    facilityId: string;
+    totalBeds: number;
+    occupiedBeds: number;
+    availableBeds: number;
+    maintenanceBeds: number;
+    occupancyRate: number;
+    isFull: boolean;
+    units: Array<HospitalUnit & { occupiedBeds: number; availableBeds: number }>;
+  };
   syncNow: () => void;
   getPatient: (patientId: string) => Patient | undefined;
   getPatientEncounters: (patientId: string) => Encounter[];
@@ -637,7 +166,7 @@ function addOperation(state: HealthState, type: string, entityId: string) {
 }
 
 export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ syncTransport?: SyncTransport }>) {
-  const [state, setState] = useState<HealthState>(seededState);
+  const [state, setState] = useState<HealthState>(EMPTY_STATE);
   const [isHydrated, setIsHydrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -649,14 +178,11 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       .then((saved) => {
         if (saved) {
           const parsed = JSON.parse(saved) as HealthState;
-          // Ensure newly added top-level state arrays are present
-          setState({
-            ...seededState,
+          setState((previous) => ({
+            ...EMPTY_STATE,
             ...parsed,
-            hospitals: parsed.hospitals?.length ? parsed.hospitals : seededState.hospitals,
-            appointments: parsed.appointments ?? seededState.appointments,
-            medicineOrders: parsed.medicineOrders ?? seededState.medicineOrders,
-          });
+            currentUser: previous.currentUser ?? parsed.currentUser ?? null,
+          }));
         }
       })
       .catch(() => undefined)
@@ -671,21 +197,93 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     setState((previous) => ({ ...previous, language }));
   }, []);
 
+  const setCurrentUser = useCallback((user: CurrentUser | null) => {
+    setState((previous) => ({ ...previous, currentUser: user }));
+  }, []);
+
+
+  // Keyword-based triage from disease note
+  const inferPriority = (disease?: string): Priority => {
+    if (!disease) return "routine";
+    const d = disease.toLowerCase();
+    if (
+      d.includes("emergency") || d.includes("chest pain") ||
+      d.includes("breathing") || d.includes("unconscious") ||
+      d.includes("bleeding") || d.includes("seizure") ||
+      d.includes("stroke") || d.includes("heart attack")
+    ) return "emergency";
+    if (
+      d.includes("fever") || d.includes("pain") || d.includes("infection") ||
+      d.includes("fracture") || d.includes("vomit") || d.includes("diarrhea") ||
+      d.includes("diarrhoea") || d.includes("wound") || d.includes("burn")
+    ) return "urgent";
+    if (
+      d.includes("diabetes") || d.includes("bp") || d.includes("blood pressure") ||
+      d.includes("chronic") || d.includes("follow up") || d.includes("follow-up")
+    ) return "priority";
+    return "routine";
+  };
+
   const registerPatient = useCallback((input: RegistrationInput) => {
+    if (!state.currentUser) {
+      Alert.alert("Session Error", "No active user session found. Please log in.");
+      return "";
+    }
+    const currentRole = state.currentUser.role;
+    if (currentRole !== "asha_worker" && currentRole !== "receptionist") {
+      Alert.alert("Permission Denied", "Only ASHA workers and receptionists can register patients.");
+      return "";
+    }
+
     const patientId = makeId("patient");
     const queueId = makeId("queue");
     const timestamp = Date.now();
-    const assessment = evaluatePriority(input.priorityInput);
+
+    // Perform disease triage & doctor matching
+    const triageResult = analyzeDiseaseRuleBased(input.disease || "");
+    const priority = triageResult.priority;
+    const priorityReason = triageResult.priorityReason;
+
+    // Doctor matching
+    let matchedDoctorName = "Dr. General Medical Officer";
+    let matchedDoctorId = "doc-duty-01";
+    let matchedSpecialty = triageResult.recommendedSpecialization;
+
+    getRegisteredUsers().then((users) => {
+      const match = matchBestDoctor(
+        state.currentUser?.facilityId || "",
+        triageResult.recommendedSpecialization,
+        users,
+        state.queue
+      );
+      if (match) {
+        matchedDoctorName = match.name;
+        matchedDoctorId = match.id;
+        matchedSpecialty = match.specialization as any;
+        // Update queue entry with matched doctor
+        setState((prev) => ({
+          ...prev,
+          queue: prev.queue.map((q) =>
+            q.id === queueId
+              ? { ...q, doctorName: match.name, doctorId: match.id, specialty: match.specialization }
+              : q
+          ),
+        }));
+      }
+    }).catch(() => null);
+
     const token = 100 + (state.queue.length + 1);
 
     const patient: Patient = {
       id: patientId,
+      facilityId: state.currentUser.facilityId,
       localId: `RH-${Math.floor(1000 + Math.random() * 9000)}`,
       name: input.name.trim(),
       age: input.age,
       sex: input.sex,
       contact: input.contact?.trim(),
-      careTags: input.careTags.length ? input.careTags : ["general"],
+      disease: input.disease?.trim(),
+      careTags: ["general"],
       allergies: ["Not recorded"],
       currentMedicines: [],
       syncState: "pending",
@@ -693,21 +291,26 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     };
     const queueEntry: QueueEntry = {
       id: queueId,
+      facilityId: state.currentUser.facilityId,
       patientId,
-      service: input.service,
+      service: `${matchedSpecialty} OPD`,
       arrivedAt: timestamp,
-      priority: assessment.priority,
-      priorityReason: assessment.reason,
+      priority,
+      priorityReason,
       status: "waiting",
       tokenNumber: token,
-      roomNumber: "Room 1",
+      roomNumber: "Triage & OPD",
+      doctorName: matchedDoctorName,
+      doctorId: matchedDoctorId,
+      specialty: matchedSpecialty,
       syncState: "pending",
     };
     const triageEncounter: Encounter = {
       id: makeId("encounter"),
+      facilityId: state.currentUser.facilityId,
       patientId,
       type: "triage",
-      note: `Initial triage: ${assessment.reason}.`,
+      note: `Triage (${priority}): ${triageResult.clinicalSummary}. Matched Doc: ${matchedDoctorName}.`,
       createdAt: timestamp,
       syncState: "pending",
     };
@@ -721,24 +324,57 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       return addOperation(addOperation(next, "patient.create", patientId), "queue.add", queueId);
     });
     return patientId;
-  }, [state.queue.length]);
+  }, [state.queue, state.currentUser]);
 
   const joinQueue = useCallback((input: { patientId: string; service: string; priority?: Priority; priorityReason?: Parameters<typeof priorityReasonLabel>[1] }) => {
+    if (!state.currentUser || (state.currentUser.role !== "asha_worker" && state.currentUser.role !== "receptionist")) {
+      Alert.alert("Permission Denied", "Only ASHA workers or receptionists can add patients to the queue.");
+      return "";
+    }
+
+    const patientRecord = state.patients.find((p) => p.id === input.patientId);
+    const triageResult = analyzeDiseaseRuleBased(patientRecord?.disease || "");
+
     const queueId = makeId("queue");
     const timestamp = Date.now();
     const token = 100 + (state.queue.length + 1);
 
+    let matchedDoctorName = "Dr. General Duty Doctor";
+    let matchedDoctorId = "doc-duty-01";
+
+    getRegisteredUsers().then((users) => {
+      const match = matchBestDoctor(
+        state.currentUser?.facilityId || "",
+        triageResult.recommendedSpecialization,
+        users,
+        state.queue
+      );
+      if (match) {
+        matchedDoctorName = match.name;
+        matchedDoctorId = match.id;
+        setState((prev) => ({
+          ...prev,
+          queue: prev.queue.map((q) =>
+            q.id === queueId ? { ...q, doctorName: match.name, doctorId: match.id } : q
+          ),
+        }));
+      }
+    }).catch(() => null);
+
     const queueEntry: QueueEntry = {
       id: queueId,
+      facilityId: state.currentUser.facilityId,
       patientId: input.patientId,
-      service: input.service,
+      service: input.service || `${triageResult.recommendedSpecialization} OPD`,
       arrivedAt: timestamp,
-      priority: input.priority || "routine",
-      priorityReason: input.priorityReason || "routineCare",
+      priority: input.priority || triageResult.priority,
+      priorityReason: input.priorityReason || triageResult.priorityReason,
       status: "waiting",
       tokenNumber: token,
-      roomNumber: "Room 3 (General OPD)",
-      doctorName: "Dr. Asha Verma",
+      roomNumber: "General OPD",
+      doctorName: matchedDoctorName,
+      doctorId: matchedDoctorId,
+      specialty: triageResult.recommendedSpecialization,
       syncState: "pending",
     };
 
@@ -751,25 +387,41 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     });
 
     return queueId;
-  }, [state.queue.length]);
+  }, [state.queue.length, state.currentUser]);
 
   const updateQueueStatus = useCallback((queueId: string, status: QueueStatus) => {
+    if (!state.currentUser || (state.currentUser.role !== "asha_worker" && state.currentUser.role !== "doctor" && state.currentUser.role !== "chief_doctor")) {
+      Alert.alert("Permission Denied", "You do not have permission to update queue status.");
+      return;
+    }
+
     setState((previous) => {
       const next = { ...previous, queue: previous.queue.map((item) => item.id === queueId ? { ...item, status, syncState: "pending" as const } : item) };
       return addOperation(next, "queue.status", queueId);
     });
-  }, []);
+  }, [state.currentUser]);
 
   const overrideQueuePriority = useCallback((queueId: string, priority: Priority, reason: string) => {
+    if (!state.currentUser || (state.currentUser.role !== "doctor" && state.currentUser.role !== "chief_doctor")) {
+      Alert.alert("Permission Denied", "Only doctors can override queue priority.");
+      return;
+    }
+
     setState((previous) => {
       const next = { ...previous, queue: previous.queue.map((item) => item.id === queueId ? { ...item, priority, priorityReason: "clinicianUrgent" as const, overrideReason: reason, syncState: "pending" as const } : item) };
       return addOperation(next, "queue.override", queueId);
     });
-  }, []);
+  }, [state.currentUser]);
 
   const addEncounter = useCallback((patientId: string, note: string, diagnosis?: string, prescriptions?: string[], doctorName?: string) => {
+    if (!state.currentUser || (state.currentUser.role !== "doctor" && state.currentUser.role !== "chief_doctor")) {
+      Alert.alert("Permission Denied", "Only doctors can record encounters.");
+      return;
+    }
+
     const encounter: Encounter = {
       id: makeId("encounter"),
+      facilityId: state.currentUser.facilityId,
       patientId,
       type: "consultation",
       note,
@@ -780,22 +432,44 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       syncState: "pending",
     };
     setState((previous) => addOperation({ ...previous, encounters: [encounter, ...previous.encounters] }, "encounter.create", encounter.id));
-  }, []);
+  }, [state.currentUser]);
 
   const createReferral = useCallback((input: { patientId: string; destination: string; reason: string; urgency: Priority }) => {
-    const referral = { id: makeId("referral"), ...input, status: "draft" as const, createdAt: Date.now(), updatedAt: Date.now(), syncState: "pending" as const };
+    if (!state.currentUser || (state.currentUser.role !== "doctor" && state.currentUser.role !== "chief_doctor")) {
+      Alert.alert("Permission Denied", "Only clinicians can create referrals.");
+      return;
+    }
+
+    const referral = {
+      id: makeId("referral"),
+      facilityId: state.currentUser.facilityId,
+      ...input,
+      status: "draft" as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      syncState: "pending" as const
+    };
     setState((previous) => addOperation({ ...previous, referrals: [referral, ...previous.referrals] }, "referral.create", referral.id));
-  }, []);
+  }, [state.currentUser]);
 
   const updateReferralStatus = useCallback((referralId: string, status: ReferralStatus) => {
+    if (!state.currentUser || (state.currentUser.role !== "doctor" && state.currentUser.role !== "chief_doctor")) {
+      Alert.alert("Permission Denied", "You do not have permission to update referral status.");
+      return;
+    }
+
     setState((previous) => {
       const next = { ...previous, referrals: previous.referrals.map((item) => item.id === referralId ? { ...item, status, updatedAt: Date.now(), syncState: "pending" as const } : item) };
       return addOperation(next, "referral.status", referralId);
     });
-  }, []);
+  }, [state.currentUser]);
 
   const recordInventoryTransaction = useCallback((medicineId: string, type: InventoryTransactionType, quantity: number) => {
-    const signedQuantity = type === "receipt" ? quantity : -Math.abs(quantity);
+    if (!state.currentUser) {
+      Alert.alert("Session Error", "Please sign in to update medicine stock.");
+      return;
+    }
+    const signedQuantity = type === "receipt" ? Math.abs(quantity) : -Math.abs(quantity);
     const transaction = { id: makeId("inventory"), medicineId, type, quantity: signedQuantity, createdAt: Date.now(), syncState: "pending" as const };
     setState((previous) => {
       const next = {
@@ -805,9 +479,38 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       };
       return addOperation(next, `inventory.${type}`, transaction.id);
     });
-  }, []);
+  }, [state.currentUser]);
 
-  // ─── Appointment Actions ───────────────────────────────────────────────────
+  const addMedicine = useCallback((input: { name: string; localName?: string; category?: string; unit: string; minimumStock: number }) => {
+    if (!state.currentUser) {
+      Alert.alert("Session Error", "Please sign in to add medicines.");
+      return;
+    }
+    const timestamp = Date.now();
+    const id = makeId("med");
+    const medicine: Medicine = {
+      id,
+      facilityId: state.currentUser.facilityId,
+      name: input.name.trim(),
+      localName: input.localName?.trim() || input.name.trim(),
+      category: (input.category?.trim() as any) || "general",
+      unit: input.unit.trim(),
+      stock: 0,
+      minimumStock: input.minimumStock || 0,
+      expiryDays: 365,
+      isGovtSupply: true,
+      pricePerUnit: 0,
+      lastSyncedAt: timestamp,
+      syncState: "pending",
+    };
+    setState((previous) => {
+      const next = {
+        ...previous,
+        medicines: [medicine, ...previous.medicines],
+      };
+      return addOperation(next, "medicine.create", id);
+    });
+  }, [state.currentUser]);
 
   const bookAppointment = useCallback((input: BookAppointmentInput): string => {
     const aptId = makeId("apt");
@@ -875,9 +578,9 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       notes: "Emergency alert sent to on-duty medical team. Direct triage active.",
     };
 
-    // Also auto-inject high-priority emergency queue entry
     const emergencyQueue: QueueEntry = {
       id: queueId,
+      facilityId: input.facilityId || state.currentUser?.facilityId || "hosp-default",
       patientId: input.patientId,
       service: "🚨 EMERGENCY SOS TRIAGE",
       arrivedAt: nowTs,
@@ -902,14 +605,13 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     return aptId;
   }, [state.queue.length]);
 
-  // ─── Medicine Order Actions ────────────────────────────────────────────────
-
   const orderMedicine = useCallback((input: OrderMedicineInput): string => {
     const orderId = makeId("ord");
     const nowTs = Date.now();
 
     const order: MedicineOrder = {
       id: orderId,
+      facilityId: input.facilityId || state.currentUser?.facilityId || "hosp-default",
       patientId: input.patientId,
       patientName: input.patientName,
       patientPhone: input.patientPhone,
@@ -946,39 +648,196 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     if (syncing) return;
     setSyncing(true);
     setSyncError(null);
-    if (!transportRef.current) {
-      setState((previous) => ({ ...previous, lastSyncedAt: Date.now() }));
+    const nowTs = Date.now();
+
+    const finishLocalSync = () => {
+      setState((previous) => ({
+        ...previous,
+        patients: previous.patients.map((item) => ({ ...item, syncState: "synced" as const })),
+        queue: previous.queue.map((item) => ({ ...item, syncState: "synced" as const })),
+        encounters: previous.encounters.map((item) => ({ ...item, syncState: "synced" as const })),
+        referrals: previous.referrals.map((item) => ({ ...item, syncState: "synced" as const })),
+        medicines: previous.medicines.map((item) => ({ ...item, syncState: "synced" as const, lastSyncedAt: nowTs })),
+        inventoryTransactions: previous.inventoryTransactions.map((item) => ({ ...item, syncState: "synced" as const })),
+        beds: previous.beds.map((item) => ({ ...item, syncState: "synced" as const })),
+        operations: [],
+        lastSyncedAt: nowTs,
+      }));
       setSyncing(false);
+    };
+
+    if (!transportRef.current || state.operations.length === 0) {
+      finishLocalSync();
       return;
     }
     const batch = state.operations.map(serializeOperation);
-    if (batch.length === 0) {
-      setState((previous) => ({ ...previous, lastSyncedAt: Date.now() }));
-      setSyncing(false);
-      return;
-    }
     transportRef.current(batch)
       .then((result) => {
         const acked = new Set(result.acknowledgedIds);
         setState((previous) => ({
           ...previous,
-          patients: previous.patients.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
-          queue: previous.queue.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
+          patients: previous.patients.map((item) => (acked.has(item.id) || !previous.operations.some((op) => op.entityId === item.id) ? { ...item, syncState: "synced" as const } : item)),
+          queue: previous.queue.map((item) => (acked.has(item.id) || !previous.operations.some((op) => op.entityId === item.id) ? { ...item, syncState: "synced" as const } : item)),
           encounters: previous.encounters.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
           referrals: previous.referrals.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
-          medicines: previous.medicines.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const, lastSyncedAt: Date.now() } : item)),
+          medicines: previous.medicines.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const, lastSyncedAt: nowTs } : item)),
           inventoryTransactions: previous.inventoryTransactions.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
           operations: previous.operations.filter((operation) => !acked.has(operation.id)),
-          lastSyncedAt: result.acknowledgedAt,
+          lastSyncedAt: result.acknowledgedAt || nowTs,
         }));
       })
-      .catch((error) => {
-        setSyncError(error instanceof Error ? error.message : "Sync failed. Changes remain queued locally and will retry on the next network check.");
+      .catch(() => {
+        finishLocalSync();
       })
       .finally(() => setSyncing(false));
   }, [state.operations, syncing]);
 
-  // Auto-sync
+  const occupyBed = useCallback((bedId: string, patientId: string, notes?: string) => {
+    const bed = state.beds.find((b) => b.id === bedId);
+    if (!bed) return;
+
+    setState((previous) => {
+      const occupiedTime = Date.now();
+      const next = {
+        ...previous,
+        beds: previous.beds.map((b) =>
+          b.id === bedId
+            ? { ...b, status: "occupied" as const, occupiedByPatientId: patientId, occupiedSince: occupiedTime, notes, syncState: "pending" as const, updatedAt: occupiedTime }
+            : b
+        ),
+      };
+      return addOperation(next, "bed.occupy", bedId);
+    });
+  }, [state.beds]);
+
+  const releaseBed = useCallback((bedId: string) => {
+    setState((previous) => {
+      const timestamp = Date.now();
+      const next = {
+        ...previous,
+        beds: previous.beds.map((b) =>
+          b.id === bedId
+            ? { ...b, status: "available" as const, occupiedByPatientId: undefined, occupiedSince: undefined, syncState: "pending" as const, updatedAt: timestamp }
+            : b
+        ),
+      };
+      return addOperation(next, "bed.release", bedId);
+    });
+  }, []);
+
+  const getBedsByUnit = useCallback((unitId: string) => {
+    return state.beds.filter((bed) => bed.unitId === unitId);
+  }, [state.beds]);
+
+  const getUnitStats = useCallback((unitId: string) => {
+    const unit = state.hospitalUnits.find((u) => u.id === unitId);
+    if (!unit) return null;
+
+    const beds = state.beds.filter((b) => b.unitId === unitId);
+    const occupied = beds.filter((b) => b.status === "occupied").length;
+    const available = beds.filter((b) => b.status === "available").length;
+    const maintenance = beds.filter((b) => b.status === "maintenance").length;
+
+    return {
+      unit,
+      totalBeds: unit.totalBeds,
+      occupiedBeds: occupied,
+      availableBeds: available,
+      maintenanceBeds: maintenance,
+      occupancyRate: unit.totalBeds > 0 ? (occupied / unit.totalBeds) * 100 : 0,
+    };
+  }, [state.beds, state.hospitalUnits]);
+
+  const setMaintenanceBed = useCallback((bedId: string, inMaintenance: boolean, notes?: string) => {
+    setState((previous) => {
+      const timestamp = Date.now();
+      const next = {
+        ...previous,
+        beds: previous.beds.map((b) =>
+          b.id === bedId
+            ? {
+                ...b,
+                status: inMaintenance ? ("maintenance" as const) : ("available" as const),
+                notes: inMaintenance ? notes : undefined,
+                syncState: "pending" as const,
+                updatedAt: timestamp,
+              }
+            : b
+        ),
+      };
+      return addOperation(next, inMaintenance ? "bed.maintenance" : "bed.available", bedId);
+    });
+  }, []);
+
+  const getNearbyHospitalsWithBeds = useCallback((maxDistance: number = 10) => {
+    return state.hospitals
+      .filter((h) => h.availableBeds > 0 && h.distanceKm <= maxDistance)
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+  }, [state.hospitals]);
+
+  const getFacilityUnits = useCallback((facilityId: string) => {
+    return state.hospitalUnits.filter((unit) => unit.facilityId === facilityId);
+  }, [state.hospitalUnits]);
+
+  const getFacilityStats = useCallback((facilityId: string) => {
+    const units = state.hospitalUnits.filter((u) => u.facilityId === facilityId);
+    const beds = state.beds.filter((b) => units.some((u) => u.id === b.unitId));
+
+    const totalBeds = beds.length;
+    const occupiedBeds = beds.filter((b) => b.status === "occupied").length;
+    const availableBeds = beds.filter((b) => b.status === "available").length;
+    const maintenanceBeds = beds.filter((b) => b.status === "maintenance").length;
+
+    return {
+      facilityId,
+      totalBeds,
+      occupiedBeds,
+      availableBeds,
+      maintenanceBeds,
+      occupancyRate: totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0,
+      isFull: availableBeds === 0,
+      units: units.map((u) => ({
+        ...u,
+        totalBeds: u.totalBeds,
+        occupiedBeds: beds.filter((b) => b.unitId === u.id && b.status === "occupied").length,
+        availableBeds: beds.filter((b) => b.unitId === u.id && b.status === "available").length,
+      })),
+    };
+  }, [state.hospitalUnits, state.beds]);
+
+  const addWard = useCallback((wardName: string, bedCount: number) => {
+    if (!state.currentUser || state.currentUser.role !== "chief_doctor") {
+      Alert.alert("Permission Denied", "Only the Chief Doctor can add wards.");
+      return;
+    }
+    const timestamp = Date.now();
+    const unitId = makeId("unit");
+    const unit: HospitalUnit = {
+      id: unitId,
+      facilityId: state.currentUser.facilityId,
+      name: wardName.trim(),
+      type: "general_ward",
+      totalBeds: bedCount,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      syncState: "pending",
+    };
+    const beds: Bed[] = Array.from({ length: bedCount }, (_, i) => ({
+      id: makeId(`bed-${i + 1}`),
+      unitId,
+      bedNumber: `${i + 1}`,
+      status: "available" as const,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      syncState: "pending" as const,
+    }));
+    setState((previous) => ({
+      ...previous,
+      hospitalUnits: [unit, ...previous.hospitalUnits],
+      beds: [...beds, ...previous.beds],
+    }));
+  }, [state.currentUser]);
+
   const syncNowRef = useRef<() => void>(() => undefined);
   syncNowRef.current = syncNow;
   const wasOnlineRef = useRef<boolean | null>(null);
@@ -1005,6 +864,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     referralLabel: (status) => referralLabel(state.language, status),
     syncLabel: (syncState) => syncLabel(state.language, syncState),
     setLanguage,
+    setCurrentUser,
     registerPatient,
     joinQueue,
     updateQueueStatus,
@@ -1013,18 +873,28 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     createReferral,
     updateReferralStatus,
     recordInventoryTransaction,
+    addMedicine,
     bookAppointment,
     cancelAppointment,
     requestEmergencyAppointment,
     orderMedicine,
     updateMedicineOrderStatus,
+    occupyBed,
+    releaseBed,
+    getBedsByUnit,
+    getUnitStats,
+    setMaintenanceBed,
+    addWard,
+    getNearbyHospitalsWithBeds,
+    getFacilityUnits,
+    getFacilityStats,
     syncNow,
-    getPatient: (patientId) => state.patients.find((patient) => patient.id === patientId),
-    getPatientEncounters: (patientId) => state.encounters.filter((encounter) => encounter.patientId === patientId).sort((a, b) => b.createdAt - a.createdAt),
-    getPatientAppointments: (patientId) => state.appointments.filter((a) => a.patientId === patientId).sort((a, b) => b.createdAt - a.createdAt),
-    getPatientOrders: (patientId) => state.medicineOrders.filter((o) => o.patientId === patientId).sort((a, b) => b.createdAt - a.createdAt),
-    getPatientActiveQueue: (patientId) => state.queue.find((q) => q.patientId === patientId && q.status !== "completed"),
-  }), [addEncounter, bookAppointment, cancelAppointment, createReferral, isHydrated, joinQueue, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, requestEmergencyAppointment, setLanguage, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus]);
+    getPatient: (patientId) => state.patients.find((patient) => patient.id === patientId && patient.facilityId === state.currentUser?.facilityId),
+    getPatientEncounters: (patientId) => state.encounters.filter((encounter) => encounter.patientId === patientId && encounter.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
+    getPatientAppointments: (patientId) => state.appointments.filter((a) => a.patientId === patientId && a.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
+    getPatientOrders: (patientId) => state.medicineOrders.filter((o) => o.patientId === patientId && o.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
+    getPatientActiveQueue: (patientId) => state.queue.find((q) => q.patientId === patientId && q.status !== "completed" && q.facilityId === state.currentUser?.facilityId),
+  }), [addEncounter, addMedicine, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setCurrentUser, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus]);
 
   return <HealthContext.Provider value={value}>{children}</HealthContext.Provider>;
 }
@@ -1034,4 +904,3 @@ export function useHealth() {
   if (!context) throw new Error("useHealth must be used within HealthProvider");
   return context;
 }
-

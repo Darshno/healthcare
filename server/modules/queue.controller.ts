@@ -24,7 +24,7 @@ export class QueueController {
   async enqueue(
     @Body()
     body: {
-      facilityId: number;
+      hospitalId: number;
       patientId: number;
       serviceType: string;
       careCategory: "emergency" | "urgent" | "priority" | "routine";
@@ -35,64 +35,64 @@ export class QueueController {
     return { jobId: job.id, status: "queued" };
   }
 
-  @Post("call-next/:facilityId")
+  @Post("call-next/:hospitalId")
   async callNext(
-    @Param("facilityId") facilityId: string,
+    @Param("hospitalId") hospitalId: string,
     @Query("serviceType") serviceType?: string,
   ) {
-    const job = await this.patientQueue.callNext(Number(facilityId), serviceType);
+    const job = await this.patientQueue.callNext(Number(hospitalId), serviceType);
     return { jobId: job.id, status: "calling" };
   }
 
-  @Post("call/:facilityId/:patientId")
+  @Post("call/:hospitalId/:patientId")
   async call(
-    @Param("facilityId") facilityId: string,
+    @Param("hospitalId") hospitalId: string,
     @Param("patientId") patientId: string,
   ) {
-    const job = await this.patientQueue.call(Number(facilityId), Number(patientId));
+    const job = await this.patientQueue.call(Number(hospitalId), Number(patientId));
     return { jobId: job.id, status: "calling" };
   }
 
-  @Post("complete/:facilityId/:patientId")
+  @Post("complete/:hospitalId/:patientId")
   async complete(
-    @Param("facilityId") facilityId: string,
+    @Param("hospitalId") hospitalId: string,
     @Param("patientId") patientId: string,
   ) {
-    const job = await this.patientQueue.complete(Number(facilityId), Number(patientId));
+    const job = await this.patientQueue.complete(Number(hospitalId), Number(patientId));
     return { jobId: job.id, status: "completed" };
   }
 
-  @Post("transfer/:facilityId/:patientId")
+  @Post("transfer/:hospitalId/:patientId")
   async transfer(
-    @Param("facilityId") facilityId: string,
+    @Param("hospitalId") hospitalId: string,
     @Param("patientId") patientId: string,
-    @Body() body: { targetFacilityId: number },
+    @Body() body: { targetHospitalId: number },
   ) {
     const job = await this.patientQueue.transfer(
-      Number(facilityId),
+      Number(hospitalId),
       Number(patientId),
-      body.targetFacilityId,
+      body.targetHospitalId,
     );
     return { jobId: job.id, status: "transferring" };
   }
 
-  @Post("pause/:facilityId/:patientId")
+  @Post("pause/:hospitalId/:patientId")
   async pause(
-    @Param("facilityId") facilityId: string,
+    @Param("hospitalId") hospitalId: string,
     @Param("patientId") patientId: string,
   ) {
-    const job = await this.patientQueue.pause(Number(facilityId), Number(patientId));
+    const job = await this.patientQueue.pause(Number(hospitalId), Number(patientId));
     return { jobId: job.id, status: "paused" };
   }
 
   /**
-   * Current queue snapshot for a facility (from the fast cache store).
+   * Current queue snapshot for a hospital (from the fast cache store).
    * Used by the doctor portal to render the board and by SSE clients on connect.
    */
-  @Get(":facilityId")
-  async facilityQueue(@Param("facilityId") facilityId: string) {
-    const facility = Number(facilityId);
-    const hash = (await this.cache.getAllHash(`queue:facility:${facility}`)) ?? {};
+  @Get(":hospitalId")
+  async hospitalQueue(@Param("hospitalId") hospitalId: string) {
+    const hospital = Number(hospitalId);
+    const hash = (await this.cache.getAllHash(`queue:hospital:${hospital}`)) ?? {};
     const entries = Object.values(hash).filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object");
     const priorityOrder = ["emergency", "urgent", "priority", "routine"];
     entries.sort((a, b) => {
@@ -102,21 +102,21 @@ export class QueueController {
       return Number(a.enteredAt ?? 0) - Number(b.enteredAt ?? 0);
     });
     return {
-      facilityId: facility,
-      entries: entries.map((entry) => ({ ...entry, facilityId: facility })),
+      hospitalId: hospital,
+      entries: entries.map((entry) => ({ ...entry, hospitalId: hospital })),
     };
   }
 
   /**
-   * Server-Sent Events stream of live queue updates for a facility.
+   * Server-Sent Events stream of live queue updates for a hospital.
    * Emits an initial snapshot, then each subsequent queue event.
    */
-  @Get("events/:facilityId")
-  async streamFacilityQueue(
-    @Param("facilityId") facilityId: string,
+  @Get("events/:hospitalId")
+  async streamHospitalQueue(
+    @Param("hospitalId") hospitalId: string,
     @Res() res: Response,
   ) {
-    const facility = Number(facilityId);
+    const hospital = Number(hospitalId);
 
     res.status(200).set({
       "Content-Type": "text/event-stream",
@@ -131,10 +131,10 @@ export class QueueController {
     };
 
     // Initial snapshot from the fast in-memory/Redis store.
-    const snapshot = (await this.cache.getAllHash<Record<string, unknown>>(`queue:facility:${facility}`)) ?? {};
-    send("snapshot", { facilityId: facility, entries: snapshot });
+    const snapshot = (await this.cache.getAllHash<Record<string, unknown>>(`queue:hospital:${hospital}`)) ?? {};
+    send("snapshot", { hospitalId: hospital, entries: snapshot });
 
-    const unsubscribe = this.realtime.subscribe(facility, (event) => {
+    const unsubscribe = this.realtime.subscribe(hospital, (event) => {
       send("queue.update", event);
     });
 
@@ -163,7 +163,7 @@ export class TriageController {
     @Body()
     body: {
       patientId: number;
-      facilityId: number;
+      hospitalId: number;
       serviceType: string;
       screeningData: Record<string, unknown>;
       symptomText?: string;
@@ -177,12 +177,12 @@ export class TriageController {
     return { jobId: job.id, status: "assessing" };
   }
 
-  @Get("results/:facilityId")
+  @Get("results/:hospitalId")
   async getResults(
-    @Param("facilityId") facilityId: string,
+    @Param("hospitalId") hospitalId: string,
     @Query("patientId") patientId?: string,
   ) {
-    const where: any = { facilityId: Number(facilityId) };
+    const where: any = { hospitalId: Number(hospitalId) };
     if (patientId) where.patientId = Number(patientId);
     return this.triageRepo.find({
       where,

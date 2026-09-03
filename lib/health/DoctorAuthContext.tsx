@@ -1,9 +1,16 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, type PropsWithChildren } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  type PropsWithChildren,
+} from "react";
 import {
   type UserProfile,
   type DoctorProfile,
   type HealthWorkerProfile,
-  type PatientProfile,
   type UserRole,
   type CreateUserInput,
   getStoredUserProfile,
@@ -18,14 +25,13 @@ import {
 
 export type UserAuthContextValue = {
   user: UserProfile | null;
-  role: UserRole;
+  role: UserRole | null;
   isAuthenticated: boolean;
   isAuthReady: boolean;
   registeredUsers: UserProfile[];
-  // Role specific convenience getters
+  // Role-specific convenience getters
   doctor: DoctorProfile | null;
   healthWorker: HealthWorkerProfile | null;
-  patient: PatientProfile | null;
   // Auth operations
   signIn: (identifier: string, passcode: string, targetRole?: UserRole) => Promise<void>;
   signUp: (input: CreateUserInput) => Promise<void>;
@@ -38,7 +44,8 @@ const UserAuthContext = createContext<UserAuthContextValue | undefined>(undefine
 export function DoctorAuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>(PRESET_USERS);
+  // Start with empty array — no preset users
+  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>([]);
 
   useEffect(() => {
     async function init() {
@@ -46,12 +53,12 @@ export function DoctorAuthProvider({ children }: PropsWithChildren) {
         const stored = await getStoredUserProfile();
         if (stored) {
           setUser(stored);
-        } else {
-          // Default to first preset doctor for initial state if unassigned
-          // But leave null so AuthGate displays role login screen
         }
         const registered = await getRegisteredUsers();
-        setRegisteredUsers(registered);
+        // Merge stored with PRESET_USERS (which is now []) to stay type-safe
+        setRegisteredUsers([...registered, ...PRESET_USERS.filter(
+          (p) => !registered.find((r) => r.id === p.id)
+        )]);
       } catch (err) {
         console.error("User auth initialization failed:", err);
       } finally {
@@ -85,19 +92,22 @@ export function DoctorAuthProvider({ children }: PropsWithChildren) {
     setUser(profile);
   }, []);
 
-  const doctor = user?.role === "doctor" ? (user as DoctorProfile) : null;
-  const healthWorker = user?.role === "health_worker" ? (user as HealthWorkerProfile) : null;
-  const patient = user?.role === "patient" ? (user as PatientProfile) : null;
+  const role = user?.role ?? null;
+  const doctor = (role === "doctor" || role === "chief_doctor")
+    ? (user as DoctorProfile)
+    : null;
+  const healthWorker = (role === "asha_worker" || role === "receptionist")
+    ? (user as HealthWorkerProfile)
+    : null;
 
   const value: UserAuthContextValue = {
     user,
-    role: user?.role || "doctor",
+    role,
     isAuthenticated: !!user,
     isAuthReady,
     registeredUsers,
     doctor,
     healthWorker,
-    patient,
     signIn,
     signUp,
     signOut,
@@ -121,7 +131,10 @@ export function useUserAuth() {
 export function useDoctorAuth() {
   const context = useUserAuth();
   const registeredDoctors = useMemo(
-    () => context.registeredUsers.filter((u) => u.role === "doctor") as DoctorProfile[],
+    () =>
+      context.registeredUsers.filter(
+        (u) => u.role === "doctor" || u.role === "chief_doctor",
+      ) as DoctorProfile[],
     [context.registeredUsers],
   );
 
@@ -129,7 +142,7 @@ export function useDoctorAuth() {
     async (input: any) => {
       await context.signUp({
         ...input,
-        role: "doctor",
+        role: input.isChiefDoctor ? "chief_doctor" : "doctor",
       });
     },
     [context],
@@ -142,5 +155,3 @@ export function useDoctorAuth() {
     signUp: signUpDoctor,
   };
 }
-
-

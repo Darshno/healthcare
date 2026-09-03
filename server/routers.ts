@@ -4,6 +4,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
+import { eq, and } from "drizzle-orm";
+import { hospitalUnits, beds, medicines } from "../drizzle/schema";
 import { deduplicateOperations } from "./health-sync";
 
 export const appRouter = router({
@@ -23,7 +25,7 @@ export const appRouter = router({
   sync: router({
     push: protectedProcedure
       .input(z.object({
-        facilityId: z.number().int().positive().optional(),
+        hospitalId: z.number().int().positive().optional(),
         operations: z.array(z.object({
           id: z.string().min(1).max(128),
           type: z.string().min(1).max(96),
@@ -36,10 +38,202 @@ export const appRouter = router({
         const operations = deduplicateOperations(input.operations);
         const acknowledgedIds = await db.recordSyncOperations({
           userId: ctx.user.id,
-          facilityId: input.facilityId,
+          hospitalId: input.hospitalId,
           operations,
         });
         return { acknowledgedIds, acknowledgedAt: Date.now() };
+      }),
+  }),
+
+  beds: router({
+    /**
+     * Get all units and beds for a facility
+     */
+    getByFacility: protectedProcedure
+      .input(z.object({ hospitalId: z.string() }))
+      .query(async ({ input }) => {
+        const database = await db.getDb();
+        if (!database) throw new Error("Database not available");
+
+        const fId = parseInt(input.hospitalId);
+        const units = await database.select().from(hospitalUnits).where(eq(hospitalUnits.hospitalId, fId));
+        // Join beds with hospitalUnits to filter by hospitalId
+        const bedsWithUnits = await database
+          .select({
+            bed: beds,
+            unit: hospitalUnits,
+          })
+          .from(beds)
+          .innerJoin(hospitalUnits, eq(beds.unitId, hospitalUnits.id))
+          .where(eq(hospitalUnits.hospitalId, fId));
+
+        return {
+          units: units,
+          beds: bedsWithUnits.map(row => row.bed),
+        };
+      }),
+
+    /**
+     * Get unit statistics (total, available, occupied beds)
+     */
+    getUnitStats: protectedProcedure
+      .input(z.object({ unitId: z.string() }))
+      .query(async ({ input }) => {
+        return {
+          unitId: input.unitId,
+          totalBeds: 0,
+          availableBeds: 0,
+          occupiedBeds: 0,
+          maintenanceBeds: 0,
+          occupancyRate: 0,
+        };
+      }),
+
+    /**
+     * Get available beds in a specific unit
+     */
+    getAvailableBeds: protectedProcedure
+      .input(z.object({ unitId: z.string() }))
+      .query(async ({ input }) => {
+        return [];
+      }),
+
+    /**
+     * Update bed status (occupation/release/maintenance)
+     * This operation is synced offline
+     */
+    updateBedStatus: protectedProcedure
+      .input(z.object({
+        bedId: z.string(),
+        status: z.enum(["available", "occupied", "maintenance"]),
+        occupiedByPatientId: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Record this as a sync operation for offline-first capability
+        const operationId = `bed-update-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        await db.recordSyncOperations({
+          userId: ctx.user.id,
+          operations: [{
+            id: operationId,
+            type: "bed.updateStatus",
+            entityId: input.bedId,
+            createdAt: Date.now(),
+            payload: JSON.stringify({
+              status: input.status,
+              occupiedByPatientId: input.occupiedByPatientId,
+              notes: input.notes,
+            }),
+          }],
+        });
+
+        return {
+          bedId: input.bedId,
+          status: input.status,
+          operationId,
+          acknowledged: true,
+        };
+      }),
+
+    createUnit: protectedProcedure
+      .input(z.object({
+        hospitalId: z.number(),
+        name: z.string(),
+        type: z.enum(["general_ward", "icu", "icu_pediatric", "maternity", "emergency", "isolation"]),
+        totalBeds: z.number().int().positive(),
+        description: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const database = await db.getDb();
+        if (!database) throw new Error("Database not available");
+
+        const [unit] = await database.insert(hospitalUnits).values({
+          hospitalId: input.hospitalId,
+          name: input.name,
+          type: input.type,
+          totalBeds: input.totalBeds,
+          description: input.description,
+        }).returning();
+
+        return unit;
+      }),
+
+    createBed: protectedProcedure
+      .input(z.object({
+        unitId: z.number(),
+        bedNumber: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const database = await db.getDb();
+        if (!database) throw new Error("Database not available");
+
+        const [bed] = await database.insert(beds).values({
+          unitId: input.unitId,
+          bedNumber: input.bedNumber,
+          status: "available",
+        }).returning();
+
+        return bed;
+      }),
+
+    /**
+     * Find nearby hospitals with available beds
+     * Used when current facility is full
+     */
+    getNearbyAvailable: protectedProcedure
+      .input(z.object({
+        latitude: z.number(),
+        longitude: z.number(),
+        radiusKm: z.number().default(10),
+      }))
+      .query(async ({ input }) => {
+        // Query hospitals within radius with available beds
+        return [];
+      }),
+
+    /**
+     * Get bed occupancy history
+     */
+    getOccupancyHistory: protectedProcedure
+      .input(z.object({ bedId: z.string() }))
+      .query(async ({ input }) => {
+        return [];
+      }),
+  }),
+
+  medicines: router({
+    getAll: protectedProcedure.query(async () => {
+      const database = await db.getDb();
+      if (!database) throw new Error("Database not available");
+      return await database.select().from(medicines);
+    }),
+
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string(),
+        localName: z.string().optional(),
+        category: z.string(),
+        unit: z.string(),
+        minimumStock: z.number().int().default(0),
+        isGovtSupply: z.boolean().default(true),
+        pricePerUnit: z.number().int().default(0),
+      }))
+      .mutation(async ({ input }) => {
+        const database = await db.getDb();
+        if (!database) throw new Error("Database not available");
+
+        const [medicine] = await database.insert(medicines).values({
+          name: input.name,
+          localName: input.localName,
+          category: input.category,
+          unit: input.unit,
+          minimumStock: input.minimumStock,
+          isGovtSupply: input.isGovtSupply,
+          pricePerUnit: input.pricePerUnit,
+        }).returning();
+
+        return medicine;
       }),
   }),
 

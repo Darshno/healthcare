@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from "typeorm";
 import { Patient } from "./patient.entity";
+import { Hospital } from "./hospital.entity";
 
 export type QueueStatus = "waiting" | "called" | "in_progress" | "completed" | "transferred" | "paused";
 
@@ -20,7 +21,7 @@ export class QueueEntry {
   patientId: number;
 
   @Column({ type: "int" })
-  facilityId: number;
+  hospitalId: number;
 
   @Column({ type: "varchar", length: 64 })
   serviceType: string;
@@ -59,4 +60,8 @@ export class QueueEntry {
   @ManyToOne(() => Patient, (p) => p.queueEntries, { onDelete: "CASCADE" })
   @JoinColumn({ name: "patientId" })
   patient: Patient;
+
+  @ManyToOne(() => Hospital, (h) => h.queueEntries, { onDelete: "SET NULL" })
+  @JoinColumn({ name: "hospitalId" })
+  hospital: Hospital;
 }

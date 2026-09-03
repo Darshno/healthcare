@@ -9,7 +9,7 @@ import { PATIENT_QUEUE } from "./queue.constants";
 import { QueueRealtimeService } from "./queue-realtime.service";
 
 export interface PatientQueueJob {
-  facilityId: number;
+  hospitalId: number;
   patientId: number;
   serviceType: string;
   careCategory: "emergency" | "urgent" | "priority" | "routine";
@@ -29,8 +29,8 @@ export class PatientQueueProcessor {
 
   @Process("enqueue")
   async handleEnqueue(job: Job<PatientQueueJob>) {
-    const { facilityId, patientId, serviceType, careCategory, priorityReason } = job.data;
-    const queueKey = `queue:facility:${facilityId}`;
+    const { hospitalId, patientId, serviceType, careCategory, priorityReason } = job.data;
+    const queueKey = `queue:hospital:${hospitalId}`;
 
     const entry = {
       patientId,
@@ -47,12 +47,12 @@ export class PatientQueueProcessor {
       const maxToken = await this.queueRepo
         .createQueryBuilder("qe")
         .select("MAX(qe.tokenNumber)", "max")
-        .where("qe.facilityId = :facilityId", { facilityId })
+        .where("qe.hospitalId = :hospitalId", { hospitalId })
         .getRawOne();
 
       const dbEntry = this.queueRepo.create({
         patientId,
-        facilityId,
+        hospitalId,
         serviceType,
         careCategory,
         priorityReason: priorityReason ?? null,
@@ -65,15 +65,15 @@ export class PatientQueueProcessor {
       this.logger.error(`Failed to persist enqueue for patient ${patientId}:`, error);
     }
 
-    this.logger.log(`Enqueued patient ${patientId} to facility ${facilityId} queue`);
-    await this.realtime.publish({ type: "enqueue", facilityId, patientId, at: Date.now() });
+    this.logger.log(`Enqueued patient ${patientId} to hospital ${hospitalId} queue`);
+    await this.realtime.publish({ type: "enqueue", hospitalId, patientId, at: Date.now() });
     return { success: true, entry };
   }
 
   @Process("call_next")
-  async handleCallNext(job: Job<{ facilityId: number; serviceType?: string }>) {
-    const { facilityId, serviceType } = job.data;
-    const queueKey = `queue:facility:${facilityId}`;
+  async handleCallNext(job: Job<{ hospitalId: number; serviceType?: string }>) {
+    const { hospitalId, serviceType } = job.data;
+    const queueKey = `queue:hospital:${hospitalId}`;
     const allEntries = await this.cache.getAllHash<Record<string, any>>(queueKey);
 
     if (!allEntries) return { patientId: null };
@@ -98,22 +98,22 @@ export class PatientQueueProcessor {
 
     try {
       await this.queueRepo.update(
-        { patientId: Number(patientIdStr), facilityId, status: "waiting" as any },
+        { patientId: Number(patientIdStr), hospitalId, status: "waiting" as any },
         { status: "called" as any, calledAt: new Date() },
       );
     } catch (error) {
       this.logger.error(`Failed to persist call_next for patient ${patientIdStr}:`, error);
     }
 
-    this.logger.log(`Called patient ${patientIdStr} from facility ${facilityId} queue`);
-    await this.realtime.publish({ type: "call_next", facilityId, patientId: Number(patientIdStr), at: Date.now() });
+    this.logger.log(`Called patient ${patientIdStr} from hospital ${hospitalId} queue`);
+    await this.realtime.publish({ type: "call_next", hospitalId, patientId: Number(patientIdStr), at: Date.now() });
     return { patientId: Number(patientIdStr), entry };
   }
 
   @Process("call")
-  async handleCall(job: Job<{ facilityId: number; patientId: number }>) {
-    const { facilityId, patientId } = job.data;
-    const queueKey = `queue:facility:${facilityId}`;
+  async handleCall(job: Job<{ hospitalId: number; patientId: number }>) {
+    const { hospitalId, patientId } = job.data;
+    const queueKey = `queue:hospital:${hospitalId}`;
     const entry = await this.cache.getHash<any>(queueKey, String(patientId));
     if (entry) {
       entry.status = "called";
@@ -123,22 +123,22 @@ export class PatientQueueProcessor {
 
     try {
       await this.queueRepo.update(
-        { patientId, facilityId, status: "waiting" as any },
+        { patientId, hospitalId, status: "waiting" as any },
         { status: "called" as any, calledAt: new Date() },
       );
     } catch (error) {
       this.logger.error(`Failed to persist call for patient ${patientId}:`, error);
     }
 
-    this.logger.log(`Called patient ${patientId} from facility ${facilityId} queue`);
-    await this.realtime.publish({ type: "call_next", facilityId, patientId, at: Date.now() });
+    this.logger.log(`Called patient ${patientId} from hospital ${hospitalId} queue`);
+    await this.realtime.publish({ type: "call_next", hospitalId, patientId, at: Date.now() });
     return { success: true, patientId };
   }
 
   @Process("complete")
-  async handleComplete(job: Job<{ facilityId: number; patientId: number }>) {
-    const { facilityId, patientId } = job.data;
-    const queueKey = `queue:facility:${facilityId}`;
+  async handleComplete(job: Job<{ hospitalId: number; patientId: number }>) {
+    const { hospitalId, patientId } = job.data;
+    const queueKey = `queue:hospital:${hospitalId}`;
     const entry = await this.cache.getHash<any>(queueKey, String(patientId));
     if (entry) {
       entry.status = "completed";
@@ -148,27 +148,27 @@ export class PatientQueueProcessor {
 
     try {
       await this.queueRepo.update(
-        { patientId, facilityId, status: "called" as any },
+        { patientId, hospitalId, status: "called" as any },
         { status: "completed" as any, completedAt: new Date() },
       );
     } catch (error) {
       this.logger.error(`Failed to persist complete for patient ${patientId}:`, error);
     }
 
-    this.logger.log(`Completed patient ${patientId} at facility ${facilityId}`);
-    await this.realtime.publish({ type: "complete", facilityId, patientId, at: Date.now() });
+    this.logger.log(`Completed patient ${patientId} at hospital ${hospitalId}`);
+    await this.realtime.publish({ type: "complete", hospitalId, patientId, at: Date.now() });
     return { success: true };
   }
 
   @Process("transfer")
-  async handleTransfer(job: Job<{ facilityId: number; patientId: number; targetFacilityId: number }>) {
-    const { facilityId, patientId, targetFacilityId } = job.data;
-    const sourceKey = `queue:facility:${facilityId}`;
-    const targetKey = `queue:facility:${targetFacilityId}`;
+  async handleTransfer(job: Job<{ hospitalId: number; patientId: number; targetHospitalId: number }>) {
+    const { hospitalId, patientId, targetHospitalId } = job.data;
+    const sourceKey = `queue:hospital:${hospitalId}`;
+    const targetKey = `queue:hospital:${targetHospitalId}`;
     const entry = await this.cache.getHash<any>(sourceKey, String(patientId));
 
     if (entry) {
-      entry.facilityId = targetFacilityId;
+      entry.hospitalId = targetHospitalId;
       entry.status = "waiting";
       entry.enteredAt = Date.now();
       await this.cache.delHash(sourceKey, String(patientId));
@@ -177,10 +177,10 @@ export class PatientQueueProcessor {
 
     try {
       const dbEntry = await this.queueRepo.findOne({
-        where: { patientId, facilityId, status: "called" as any },
+        where: { patientId, hospitalId, status: "called" as any },
       });
       if (dbEntry) {
-        dbEntry.facilityId = targetFacilityId;
+        dbEntry.hospitalId = targetHospitalId;
         dbEntry.status = "waiting" as any;
         dbEntry.enteredAt = new Date();
         dbEntry.calledAt = null;
@@ -190,15 +190,15 @@ export class PatientQueueProcessor {
       this.logger.error(`Failed to persist transfer for patient ${patientId}:`, error);
     }
 
-    this.logger.log(`Transferred patient ${patientId} from facility ${facilityId} to ${targetFacilityId}`);
-    await this.realtime.publish({ type: "transfer", facilityId, patientId, targetFacilityId, at: Date.now() });
+    this.logger.log(`Transferred patient ${patientId} from hospital ${hospitalId} to ${targetHospitalId}`);
+    await this.realtime.publish({ type: "transfer", hospitalId, patientId, targetHospitalId, at: Date.now() });
     return { success: true };
   }
 
   @Process("pause")
-  async handlePause(job: Job<{ facilityId: number; patientId: number }>) {
-    const { facilityId, patientId } = job.data;
-    const queueKey = `queue:facility:${facilityId}`;
+  async handlePause(job: Job<{ hospitalId: number; patientId: number }>) {
+    const { hospitalId, patientId } = job.data;
+    const queueKey = `queue:hospital:${hospitalId}`;
     const entry = await this.cache.getHash<any>(queueKey, String(patientId));
     if (entry) {
       entry.status = "paused";
@@ -207,15 +207,15 @@ export class PatientQueueProcessor {
 
     try {
       await this.queueRepo.update(
-        { patientId, facilityId, status: "waiting" as any },
+        { patientId, hospitalId, status: "waiting" as any },
         { status: "paused" as any },
       );
     } catch (error) {
       this.logger.error(`Failed to persist pause for patient ${patientId}:`, error);
     }
 
-    this.logger.log(`Paused patient ${patientId} at facility ${facilityId}`);
-    await this.realtime.publish({ type: "pause", facilityId, patientId, at: Date.now() });
+    this.logger.log(`Paused patient ${patientId} at hospital ${hospitalId}`);
+    await this.realtime.publish({ type: "pause", hospitalId, patientId, at: Date.now() });
     return { success: true };
   }
 }
