@@ -3,7 +3,8 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } fr
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueueRealtime, type QueueRealtimeEvent } from "@/lib/health/useQueueRealtime";
 import { portalFetch, portalLogin, getPortalToken, clearPortalToken } from "@/lib/health/portalAuth";
-import type { Priority } from "@/lib/health/types";
+import type { Priority, VaccinationRecord } from "@/lib/health/types";
+import { VACCINES } from "@/lib/health/types";
 
 type ServerQueueRow = Record<string, unknown> & {
   patientId: string | number;
@@ -132,8 +133,9 @@ function PortalBoard({
   onFacilityId: (value: string) => void;
   onLogout: () => void;
 }) {
-  const { state, updateQueueStatus } = useHealth();
+  const { state, updateQueueStatus, markVaccineAdministered } = useHealth();
   const { user } = useUserAuth();
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   const activeHospitalId = facilityId || user?.facilityId || "hosp-nandipur-01";
   const activeHospitalName = user?.facilityName || "Hospital Console";
@@ -196,9 +198,13 @@ function PortalBoard({
             const isTakenIn = item.status === "called" || item.status === "consulting";
             const tokenStr = `#${String(item.tokenNumber ?? index + 1).padStart(2, "0")}`;
             const tone = priorityTone[item.priority || "routine"] || priorityTone.routine;
+            
+            const patientVaccines = state.vaccinationRecords.filter(v => v.patientId === item.patientId);
+            const isExpanded = expandedRowId === item.id;
 
             return (
-              <View key={item.id} style={[styles.boardRow, styles.boardBody]}>
+              <View key={item.id}>
+                <View style={[styles.boardRow, styles.boardBody]}>
                 <Text style={[styles.cell, styles.colToken, styles.tokenNum]}>{tokenStr}</Text>
                 <View style={[styles.cell, styles.colStatus]}>
                   <Text style={styles.statusText}>{statusText[item.status] || item.status}</Text>
@@ -242,13 +248,74 @@ function PortalBoard({
                       <Text style={{ color: "#198754", fontWeight: "800", fontSize: 12 }}>Mark Seen ✓</Text>
                     </Pressable>
                   )}
+                  {isTakenIn && patientVaccines.length > 0 && (
+                    <Pressable
+                      onPress={() => setExpandedRowId(isExpanded ? null : item.id)}
+                      style={styles.actionButton}
+                    >
+                      <MaterialIcons name={isExpanded ? "expand-less" : "expand-more"} size={16} color="#087E7B" />
+                      <Text style={styles.actionText}>{isExpanded ? "Hide Vaccines" : "Vaccines"}</Text>
+                    </Pressable>
+                  )}
                 </View>
+              </View>
+              {isExpanded && patientRecord && patientVaccines.length > 0 && (
+                <View style={styles.expandedPanel}>
+                  <VaccinationPanel 
+                    patient={patientRecord} 
+                    vaccines={patientVaccines} 
+                    doctorName={user?.name || "Duty Doctor"}
+                    onMarkAdministered={(recordId) => markVaccineAdministered(recordId, user?.name || "Duty Doctor")}
+                  />
+                </View>
+              )}
               </View>
             );
           })}
         </View>
       )}
     </ScrollView>
+  );
+}
+
+function VaccinationPanel({ patient, vaccines, doctorName, onMarkAdministered }: { patient: any, vaccines: VaccinationRecord[], doctorName: string, onMarkAdministered: (id: string) => void }) {
+  return (
+    <View style={styles.vaccinePanel}>
+      <Text style={styles.vaccineHeader}>💉 Vaccination Tracker</Text>
+      <Text style={styles.vaccineSub}>
+        {patient.name} · {patient.age} years old
+      </Text>
+      <View style={styles.vaccineList}>
+        {VACCINES.map(v => {
+          const record = vaccines.find(r => r.vaccineId === v.id);
+          if (!record) return null;
+          return (
+            <View key={v.id} style={styles.vaccineRow}>
+              <Pressable
+                onPress={() => !record.administered && onMarkAdministered(record.id)}
+                disabled={record.administered}
+                style={[styles.checkbox, record.administered && styles.checkboxActive]}
+              >
+                {record.administered ? (
+                  <MaterialIcons name="check" size={16} color="#FFFFFF" />
+                ) : null}
+              </Pressable>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.vaccineName}>{v.label}</Text>
+                <Text style={styles.vaccineDesc}>{v.description}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                {record.administered ? (
+                  <Text style={styles.vaccineGiven}>Given — {new Date(record.administeredAt || 0).toISOString().split('T')[0]}</Text>
+                ) : (
+                  <Text style={styles.vaccineDue}>Due: {record.dueDate}</Text>
+                )}
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -308,6 +375,18 @@ const styles = StyleSheet.create({
   subCell: { color: "#6C817C", fontSize: 11 },
   serviceCell: { color: "#54716B", fontSize: 13 },
   actionCell: { flexDirection: "row" },
-  actionButton: { alignItems: "center", flexDirection: "row", gap: 4, padding: 6 },
+  actionButton: { alignItems: "center", flexDirection: "row", gap: 4, padding: 6, backgroundColor: '#F4F7F5', borderRadius: 6, marginRight: 6 },
   actionText: { color: "#18332F", fontSize: 12, fontWeight: "800" },
+  expandedPanel: { backgroundColor: '#F9FAF9', padding: 16, borderTopWidth: 1, borderTopColor: '#E7EEEB' },
+  vaccinePanel: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#D9E4E0' },
+  vaccineHeader: { color: "#18332F", fontSize: 16, fontWeight: "900", marginBottom: 2 },
+  vaccineSub: { color: "#6C817C", fontSize: 13, marginBottom: 16 },
+  vaccineList: { gap: 12 },
+  vaccineRow: { flexDirection: 'row', alignItems: 'center' },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: '#D9E4E0', alignItems: 'center', justifyContent: 'center' },
+  checkboxActive: { backgroundColor: '#198754', borderColor: '#198754' },
+  vaccineName: { color: "#18332F", fontSize: 14, fontWeight: "800" },
+  vaccineDesc: { color: "#6C817C", fontSize: 12 },
+  vaccineGiven: { color: "#198754", fontSize: 13, fontWeight: "700" },
+  vaccineDue: { color: "#B66A00", fontSize: 13, fontWeight: "700" },
 });

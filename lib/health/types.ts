@@ -270,6 +270,32 @@ export type HealthState = {
   hospitalUnits: HospitalUnit[];
   beds: Bed[];
   bedOccupancies: BedOccupancy[];
+  vaccinationRecords: VaccinationRecord[];
   lastSyncedAt: number;
+};
+
+// ─── Vaccination Tracker Types ──────────────────────────────────────────────────
+
+export const VACCINES = [
+  { id: "bcg",   label: "BCG",          description: "At birth" },
+  { id: "opv0",  label: "OPV (Birth)",  description: "At birth" },
+  { id: "hepb0", label: "Hep-B (Birth)",description: "At birth" },
+  { id: "dpt1",  label: "DPT 1st Dose", description: "6 weeks" },
+] as const;
+
+export type VaccineId = typeof VACCINES[number]["id"];
+
+export type VaccinationRecord = {
+  id: string;
+  patientId: string;
+  facilityId: string;
+  vaccineId: VaccineId;
+  dueDate: string;        // ISO date "YYYY-MM-DD"
+  administered: boolean;
+  administeredAt?: number; // epoch ms
+  administeredBy?: string; // doctor name
+  notifiedDays: number[];  // which advance-days were already notified e.g. [3, 1]
+  createdAt: number;
+  syncState: SyncState;
 };
 

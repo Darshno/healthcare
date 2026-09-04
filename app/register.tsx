@@ -9,6 +9,7 @@ import {
   Text,
   TextInput,
   View,
+  Switch,
 } from "react-native";
 import { useHealth } from "@/lib/health/store";
 import type { Patient } from "@/lib/health/types";
@@ -31,17 +32,20 @@ const TRIAGE_COLORS: Record<string, { bg: string; fg: string; label: string }> =
 };
 
 export default function RegisterPatientScreen() {
-  const { registerPatient } = useHealth();
+  const { registerPatient, createVaccinationSchedule } = useHealth();
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [age, setAge] = useState("");
   const [sex, setSex] = useState<Sex>("female");
   const [disease, setDisease] = useState("");
+  const [createVaccines, setCreateVaccines] = useState(true);
 
   const triageAnalysis = disease.trim() ? analyzeDiseaseRuleBased(disease) : null;
   const triageLevel = triageAnalysis ? triageAnalysis.priority : "routine";
   const triageColor = TRIAGE_COLORS[triageLevel];
+  
+  const isInfant = Number(age) > 0 && Number(age) <= 2;
 
   const save = () => {
     const trimmedName = name.trim();
@@ -65,6 +69,11 @@ export default function RegisterPatientScreen() {
     });
 
     if (!patientId) return; // Permission denied (store shows alert)
+
+    if (isInfant && createVaccines) {
+      // Create with today as DOB for demo purposes
+      createVaccinationSchedule(patientId, new Date());
+    }
 
     // Navigate to queue — never leave a blank screen
     router.replace("/(tabs)/queue" as never);
@@ -171,6 +180,24 @@ export default function RegisterPatientScreen() {
             This helps determine triage priority automatically.
           </Text>
         </View>
+
+        {/* Vaccination Toggle for Infants */}
+        {isInfant && (
+          <View style={[styles.field, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', padding: 16, borderRadius: 13, borderColor: '#D5E1DD', borderWidth: 1 }]}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.label}>Create Vaccination Schedule</Text>
+              <Text style={[styles.hint, { marginTop: 2 }]}>
+                Automatically generates standard 4 injections schedule and schedules offline push notifications.
+              </Text>
+            </View>
+            <Switch 
+              value={createVaccines} 
+              onValueChange={setCreateVaccines}
+              trackColor={{ false: "#D5E1DD", true: "#087E7B" }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        )}
 
         {/* Triage Preview */}
         {disease.trim() && triageAnalysis ? (
