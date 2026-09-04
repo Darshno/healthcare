@@ -160,6 +160,11 @@ type HealthContextValue = {
     units: Array<HospitalUnit & { occupiedBeds: number; availableBeds: number }>;
   };
   syncNow: () => void;
+  /** Whether the device is effectively online (real network AND forceOffline is off). */
+  isOnline: boolean;
+  /** When true, the store behaves as if offline regardless of real connectivity. */
+  forceOffline: boolean;
+  setForceOffline: (value: boolean) => void;
   getPatient: (patientId: string) => Patient | undefined;
   getPatientEncounters: (patientId: string) => Encounter[];
   getPatientAppointments: (patientId: string) => Appointment[];
@@ -204,7 +209,9 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
   const [isHydrated, setIsHydrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [networkOnline, setNetworkOnline] = useState<boolean>(true);
+  const [forceOffline, setForceOffline] = useState<boolean>(false);
+  const isOnline = networkOnline && !forceOffline;
   const transportRef = useRef<SyncTransport | undefined>(syncTransport);
   transportRef.current = syncTransport;
 
@@ -722,6 +729,11 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
 
   const syncNow = useCallback(() => {
     if (syncing) return;
+    // Do not attempt server sync while force-offline or network is down
+    if (!isOnline) {
+      setSyncError("Offline — sync queued until connection is restored.");
+      return;
+    }
     setSyncing(true);
     setSyncError(null);
     const nowTs = Date.now();
@@ -947,7 +959,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       const online = Boolean(netState.isConnected && netState.isInternetReachable !== false);
       const previouslyOnline = wasOnlineRef.current;
       wasOnlineRef.current = online;
-      setIsOnline(online);
+      setNetworkOnline(online);
 
       if (online && previouslyOnline === false) {
         // Back online: sync immediately and restart retry scheduler
@@ -1067,6 +1079,9 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     isHydrated,
     syncing,
     syncError,
+    isOnline,
+    forceOffline,
+    setForceOffline,
     t: (key) => translate(state.language, key),
     priorityLabel: (priority) => priorityLabel(state.language, priority),
     priorityReasonLabel: (reason) => priorityReasonLabel(state.language, reason),
@@ -1105,7 +1120,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     getPatientActiveQueue: (patientId) => state.queue.find((q) => q.patientId === patientId && q.status !== "completed" && q.facilityId === state.currentUser?.facilityId),
     createVaccinationSchedule,
     markVaccineAdministered,
-  }), [addEncounter, addMedicine, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setCurrentUser, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus, createVaccinationSchedule, markVaccineAdministered]);
+  }), [addEncounter, addMedicine, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, isOnline, forceOffline, setForceOffline, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setCurrentUser, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus, createVaccinationSchedule, markVaccineAdministered]);
 
   return <HealthContext.Provider value={value}>{children}</HealthContext.Provider>;
 }

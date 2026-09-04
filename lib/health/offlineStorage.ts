@@ -103,7 +103,7 @@ export type HydratedSections = {
  * null rather than throwing, guaranteeing the app always starts.
  */
 export async function hydrateAll(): Promise<HydratedSections> {
-  const [patients, queue, encounters, referrals, medicines, inventory, beds, units, ops, meta] =
+  const [patients, queue, encounters, referrals, medicines, inventory, beds, units, ops, vaccinations, meta] =
     await Promise.all([
       readSection<unknown[]>("patients"),
       readSection<unknown[]>("queue"),
