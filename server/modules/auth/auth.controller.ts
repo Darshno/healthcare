@@ -5,13 +5,26 @@ import { JwtAuthGuard } from "./jwt-auth.guard";
 @Controller("api/auth")
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
-  constructor(private readonly authService: AuthService) {
-    this.logger.log(`AuthService injected: ${!!authService}`);
+  constructor(private readonly authService: AuthService) {}
+
+  @Post("register")
+  async register(
+    @Body()
+    body: {
+      openId: string;
+      name?: string;
+      password?: string;
+      role?: string;
+      hospitalId?: number;
+      email?: string;
+    },
+  ) {
+    return this.authService.register(body);
   }
 
   @Post("login")
-  async login(@Body() body: { openId: string }) {
-    return this.authService.login(body.openId);
+  async login(@Body() body: { openId: string; password?: string }) {
+    return this.authService.login(body.openId, body.password);
   }
 
   @UseGuards(JwtAuthGuard)

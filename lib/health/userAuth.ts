@@ -165,26 +165,50 @@ export async function saveRegisteredUser(profile: UserProfile): Promise<void> {
   }
 }
 
-export async function storeUserSession(profile: UserProfile): Promise<void> {
+export async function storeUserSession(profile: UserProfile, token?: string): Promise<void> {
   try {
     const updatedProfile = { ...profile, lastLoginAt: Date.now() };
     await AsyncStorage.setItem(USER_PROFILE_KEY, JSON.stringify(updatedProfile));
     await saveRegisteredUser(updatedProfile);
 
-    const syntheticToken = safeBase64Encode(
-      JSON.stringify({
-        openId: profile.id,
-        name: profile.name,
-        role: profile.role,
-        facilityId: profile.facilityId,
-        facilityName: profile.facilityName,
-      }),
-    );
-    syncPortalToken(`eyJhbGciOiJIUzI1NiJ9.${syntheticToken}.user_session`);
+    let activeToken = token;
+    if (!activeToken) {
+      // Try to acquire real server JWT token if available
+      try {
+        const baseUrl = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
+        const res = await fetch(`${baseUrl}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ openId: profile.id }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          activeToken = data.accessToken;
+        }
+      } catch {
+        /* server offline during local dev */
+      }
+    }
+
+    if (!activeToken) {
+      const payload = safeBase64Encode(
+        JSON.stringify({
+          sub: profile.id,
+          openId: profile.id,
+          name: profile.name,
+          role: profile.role,
+          appId: "local-app",
+        }),
+      );
+      activeToken = `eyJhbGciOiJIUzI1NiJ9.${payload}.sig`;
+    }
+
+    syncPortalToken(activeToken);
   } catch (error) {
     console.error("Failed to store user session:", error);
   }
 }
+
 
 export async function clearUserSession(): Promise<void> {
   try {

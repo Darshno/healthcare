@@ -74,6 +74,9 @@ function parseRedisUrl(url: string) {
 
 const redisConfig = hasRedis ? parseRedisUrl(process.env.REDIS_URL!) : null;
 
+import { BedsModule } from "./modules/beds/beds.module";
+import { AuditModule } from "./modules/audit/audit.module";
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -83,8 +86,9 @@ const redisConfig = hasRedis ? parseRedisUrl(process.env.REDIS_URL!) : null;
     ...(hasDb ? [TypeOrmModule.forFeature([TriageResult])] : []),
     ...(hasRedis ? [BullModule.forRoot({ redis: redisConfig! }), QueueModule] : []),
     ChatModule,
-    ...(hasDb ? [AuthModule, PatientModule, TeleconsultModule, FhirModule, HealthIdModule] : []),
+    ...(hasDb ? [AuthModule, PatientModule, BedsModule, AuditModule, TeleconsultModule, FhirModule, HealthIdModule] : []),
   ],
+
   controllers: [
     HealthController,
     ...(hasRedis ? [QueueController, TriageController] : []),

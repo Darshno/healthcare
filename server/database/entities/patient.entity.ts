@@ -51,11 +51,18 @@ export class Patient {
   @Column({ type: "timestamptz", default: () => "NOW()" })
   registeredAt: Date;
 
+  @Column({ type: "int", default: 1 })
+  version: number;
+
+  @Column({ type: "varchar", length: 128, nullable: true })
+  deviceId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
   @UpdateDateColumn()
   updatedAt: Date;
+
 
   @ManyToOne(() => Hospital, (h) => h.patients, { onDelete: "CASCADE" })
   @JoinColumn({ name: "hospitalId" })

@@ -39,6 +39,7 @@ import type {
   ReferralStatus,
   SyncState,
   UserRole,
+  VaccinationRecord,
 } from "./types";
 
 // Legacy storage key removed — offlineStorage.ts handles all persistence
@@ -62,6 +63,7 @@ const EMPTY_STATE: HealthState = {
   hospitalUnits: [],
   beds: [],
   bedOccupancies: [],
+  vaccinationRecords: [],
   lastSyncedAt: 0,
 };
 
@@ -169,8 +171,19 @@ type HealthContextValue = {
 
 const HealthContext = createContext<HealthContextValue | undefined>(undefined);
 
-function addOperation(state: HealthState, type: string, entityId: string) {
-  const operation: OfflineOperation = { id: makeId("op"), type, entityId, createdAt: Date.now() };
+/**
+ * Creates an offline operation entry with the full entity payload snapshot.
+ * The payload MUST be provided so the server can replay the operation exactly.
+ * @param payload - stringified JSON snapshot of the entity being operated on
+ */
+function addOperation(state: HealthState, type: string, entityId: string, payload?: object): HealthState {
+  const operation: OfflineOperation = {
+    id: makeId("op"),
+    type,
+    entityId,
+    createdAt: Date.now(),
+    payload: payload ? JSON.stringify(payload) : undefined,
+  };
   return { ...state, operations: [...state.operations, operation] };
 }
 
@@ -371,7 +384,10 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
         queue: [queueEntry, ...previous.queue],
         encounters: [triageEncounter, ...previous.encounters],
       };
-      return addOperation(addOperation(next, "patient.create", patientId), "queue.add", queueId);
+      return addOperation(
+        addOperation(next, "patient.create", patientId, patient),
+        "queue.add", queueId, queueEntry
+      );
     });
     return patientId;
   }, [state.queue, state.currentUser]);
@@ -433,7 +449,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
         ...previous,
         queue: [...previous.queue, queueEntry],
       };
-      return addOperation(next, "queue.add", queueId);
+      return addOperation(next, "queue.add", queueId, queueEntry);
     });
 
     return queueId;
@@ -446,8 +462,10 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     }
 
     setState((previous) => {
-      const next = { ...previous, queue: previous.queue.map((item) => item.id === queueId ? { ...item, status, syncState: "pending" as const } : item) };
-      return addOperation(next, "queue.status", queueId);
+      const updated = previous.queue.map((item) => item.id === queueId ? { ...item, status, syncState: "pending" as const } : item);
+      const next = { ...previous, queue: updated };
+      const updatedEntry = updated.find((q) => q.id === queueId);
+      return addOperation(next, "queue.status", queueId, updatedEntry ? { status } : undefined);
     });
   }, [state.currentUser]);
 
@@ -458,8 +476,9 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     }
 
     setState((previous) => {
-      const next = { ...previous, queue: previous.queue.map((item) => item.id === queueId ? { ...item, priority, priorityReason: "clinicianUrgent" as const, overrideReason: reason, syncState: "pending" as const } : item) };
-      return addOperation(next, "queue.override", queueId);
+      const updated = previous.queue.map((item) => item.id === queueId ? { ...item, priority, priorityReason: "clinicianUrgent" as const, overrideReason: reason, syncState: "pending" as const } : item);
+      const next = { ...previous, queue: updated };
+      return addOperation(next, "queue.override", queueId, { priority, overrideReason: reason });
     });
   }, [state.currentUser]);
 
@@ -481,7 +500,10 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       createdAt: Date.now(),
       syncState: "pending",
     };
-    setState((previous) => addOperation({ ...previous, encounters: [encounter, ...previous.encounters] }, "encounter.create", encounter.id));
+    setState((previous) => addOperation(
+      { ...previous, encounters: [encounter, ...previous.encounters] },
+      "encounter.create", encounter.id, encounter
+    ));
   }, [state.currentUser]);
 
   const createReferral = useCallback((input: { patientId: string; destination: string; reason: string; urgency: Priority }) => {
@@ -499,7 +521,10 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
       updatedAt: Date.now(),
       syncState: "pending" as const
     };
-    setState((previous) => addOperation({ ...previous, referrals: [referral, ...previous.referrals] }, "referral.create", referral.id));
+    setState((previous) => addOperation(
+      { ...previous, referrals: [referral, ...previous.referrals] },
+      "referral.create", referral.id, referral
+    ));
   }, [state.currentUser]);
 
   const updateReferralStatus = useCallback((referralId: string, status: ReferralStatus) => {
@@ -509,8 +534,9 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     }
 
     setState((previous) => {
-      const next = { ...previous, referrals: previous.referrals.map((item) => item.id === referralId ? { ...item, status, updatedAt: Date.now(), syncState: "pending" as const } : item) };
-      return addOperation(next, "referral.status", referralId);
+      const updated = previous.referrals.map((item) => item.id === referralId ? { ...item, status, updatedAt: Date.now(), syncState: "pending" as const } : item);
+      const next = { ...previous, referrals: updated };
+      return addOperation(next, "referral.status", referralId, { status });
     });
   }, [state.currentUser]);
 
@@ -527,7 +553,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
         medicines: previous.medicines.map((medicine) => medicine.id === medicineId ? { ...medicine, stock: Math.max(0, medicine.stock + signedQuantity), syncState: "pending" as const } : medicine),
         inventoryTransactions: [transaction, ...previous.inventoryTransactions],
       };
-      return addOperation(next, `inventory.${type}`, transaction.id);
+      return addOperation(next, `inventory.${type}`, transaction.id, transaction);
     });
   }, [state.currentUser]);
 
@@ -723,21 +749,43 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     const batch = state.operations.map(serializeOperation);
     transportRef.current(batch)
       .then((result) => {
-        const acked = new Set(result.acknowledgedIds);
+        // acknowledgedIds are OPERATION IDs (op-xxx), not entity IDs.
+        // Build a set of entity IDs whose operations were acknowledged.
+        const ackedOpIds = new Set(result.acknowledgedIds);
+        const ackedOps = state.operations.filter((op) => ackedOpIds.has(op.id));
+        const ackedEntityIds = new Set(ackedOps.map((op) => op.entityId));
+
         setState((previous) => ({
           ...previous,
-          patients: previous.patients.map((item) => (acked.has(item.id) || !previous.operations.some((op) => op.entityId === item.id) ? { ...item, syncState: "synced" as const } : item)),
-          queue: previous.queue.map((item) => (acked.has(item.id) || !previous.operations.some((op) => op.entityId === item.id) ? { ...item, syncState: "synced" as const } : item)),
-          encounters: previous.encounters.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
-          referrals: previous.referrals.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
-          medicines: previous.medicines.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const, lastSyncedAt: nowTs } : item)),
-          inventoryTransactions: previous.inventoryTransactions.map((item) => (acked.has(item.id) ? { ...item, syncState: "synced" as const } : item)),
-          operations: previous.operations.filter((operation) => !acked.has(operation.id)),
+          patients: previous.patients.map((item) =>
+            ackedEntityIds.has(item.id) ? { ...item, syncState: "synced" as const } : item
+          ),
+          queue: previous.queue.map((item) =>
+            ackedEntityIds.has(item.id) ? { ...item, syncState: "synced" as const } : item
+          ),
+          encounters: previous.encounters.map((item) =>
+            ackedEntityIds.has(item.id) ? { ...item, syncState: "synced" as const } : item
+          ),
+          referrals: previous.referrals.map((item) =>
+            ackedEntityIds.has(item.id) ? { ...item, syncState: "synced" as const } : item
+          ),
+          medicines: previous.medicines.map((item) =>
+            ackedEntityIds.has(item.id) ? { ...item, syncState: "synced" as const, lastSyncedAt: nowTs } : item
+          ),
+          inventoryTransactions: previous.inventoryTransactions.map((item) =>
+            ackedEntityIds.has(item.id) ? { ...item, syncState: "synced" as const } : item
+          ),
+          beds: previous.beds.map((item) =>
+            ackedEntityIds.has(item.id) ? { ...item, syncState: "synced" as const } : item
+          ),
+          // Remove only the acknowledged operations, keep any that failed
+          operations: previous.operations.filter((op) => !ackedOpIds.has(op.id)),
           lastSyncedAt: result.acknowledgedAt || nowTs,
         }));
       })
-      .catch(() => {
-        finishLocalSync();
+      .catch((err) => {
+        setSyncError(err instanceof Error ? err.message : "Sync failed");
+        setSyncing(false);
       })
       .finally(() => setSyncing(false));
   }, [state.operations, syncing]);
@@ -756,7 +804,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
             : b
         ),
       };
-      return addOperation(next, "bed.occupy", bedId);
+      return addOperation(next, "bed.occupy", bedId, { bedId, patientId, notes });
     });
   }, [state.beds]);
 
@@ -771,7 +819,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
             : b
         ),
       };
-      return addOperation(next, "bed.release", bedId);
+      return addOperation(next, "bed.release", bedId, { bedId });
     });
   }, []);
 

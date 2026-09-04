@@ -3,12 +3,17 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import {
   User,
   Hospital,
+  HospitalUnit,
   SyncOperation,
   Patient,
   QueueEntry,
   TeleconsultSession,
   TriageResult,
   ChatMessage,
+  Bed,
+  BedOccupancy,
+  Medicine,
+  InventoryTransaction,
 } from "./entities";
 
 import { execSync } from "child_process";
@@ -16,12 +21,17 @@ import { execSync } from "child_process";
 const entities = [
   User,
   Hospital,
+  HospitalUnit,
   SyncOperation,
   Patient,
   QueueEntry,
   TeleconsultSession,
   TriageResult,
   ChatMessage,
+  Bed,
+  BedOccupancy,
+  Medicine,
+  InventoryTransaction,
 ];
 
 function isDatabaseReachable(): boolean {
