@@ -28,8 +28,16 @@ export class User {
   @Column({ type: "varchar", length: 64, nullable: true })
   loginMethod: string | null;
 
-  @Column({ type: "enum", enum: ["chief_doc", "doctor", "asha", "receptionist", "admin"], default: "doctor" })
-  role: "chief_doc" | "doctor" | "asha" | "receptionist" | "admin";
+  @Column({ type: "varchar", length: 255, nullable: true })
+  passwordHash: string | null;
+
+  @Column({
+    type: "enum",
+    enum: ["PATIENT", "ASHA_WORKER", "RECEPTIONIST", "DOCTOR", "CHIEF_DOCTOR", "ADMIN", "chief_doc", "doctor", "asha", "receptionist", "admin"],
+    default: "DOCTOR",
+  })
+  role: "PATIENT" | "ASHA_WORKER" | "RECEPTIONIST" | "DOCTOR" | "CHIEF_DOCTOR" | "ADMIN" | "chief_doc" | "doctor" | "asha" | "receptionist" | "admin";
+
 
   @Column({ type: "int" })
   hospitalId: number;

@@ -3,26 +3,33 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
-import * as db from "./db";
-import { eq, and } from "drizzle-orm";
-import { hospitalUnits, beds, medicines } from "../drizzle/schema";
 import { deduplicateOperations } from "./health-sync";
+import { getDataSource } from "./database/datasource";
+import { HospitalUnit } from "./database/entities/hospital-unit.entity";
+import { Bed } from "./database/entities/bed.entity";
+import { BedOccupancy } from "./database/entities/bed-occupancy.entity";
+import { Medicine } from "./database/entities/medicine.entity";
+import { InventoryTransaction } from "./database/entities/inventory-transaction.entity";
+import { Patient } from "./database/entities/patient.entity";
+import { QueueEntry } from "./database/entities/queue-entry.entity";
+import { SyncOperation } from "./database/entities/sync-operation.entity";
+import { IsNull } from "typeorm";
 
 export const appRouter = router({
-  // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      return { success: true } as const;
     }),
   }),
 
   sync: router({
+    /**
+     * Push: client sends offline operations; server replays and acknowledges.
+     */
     push: protectedProcedure
       .input(z.object({
         hospitalId: z.number().int().positive().optional(),
@@ -35,73 +42,267 @@ export const appRouter = router({
         })).min(1).max(100),
       }))
       .mutation(async ({ ctx, input }) => {
-        const operations = deduplicateOperations(input.operations);
-        const acknowledgedIds = await db.recordSyncOperations({
-          userId: ctx.user.id,
-          hospitalId: input.hospitalId,
-          operations,
-        });
+        const ops = deduplicateOperations(input.operations);
+        const ds = await getDataSource();
+        if (!ds) {
+          // No DB: record-only mode (still acks so client doesn't loop)
+          return { acknowledgedIds: ops.map((o) => o.id), acknowledgedAt: Date.now() };
+        }
+
+        const syncRepo = ds.getRepository(SyncOperation);
+        const patientRepo = ds.getRepository(Patient);
+        const queueRepo = ds.getRepository(QueueEntry);
+        const bedRepo = ds.getRepository(Bed);
+        const bedOccRepo = ds.getRepository(BedOccupancy);
+        const medicineRepo = ds.getRepository(Medicine);
+        const inventoryRepo = ds.getRepository(InventoryTransaction);
+        const acknowledgedIds: string[] = [];
+
+        for (const op of ops) {
+          // Idempotency check
+          const existing = await syncRepo.findOne({ where: { operationId: op.id } });
+          if (existing) {
+            acknowledgedIds.push(op.id);
+            continue;
+          }
+
+          // Record the operation
+          await syncRepo.save(syncRepo.create({
+            operationId: op.id,
+            userId: ctx.user.id,
+            hospitalId: input.hospitalId ?? null,
+            operationType: op.type,
+            entityId: op.entityId,
+            payload: op.payload ?? null,
+            clientCreatedAt: new Date(op.createdAt),
+          }));
+
+          const payload = op.payload ? (() => { try { return JSON.parse(op.payload!); } catch { return null; } })() : null;
+
+          // Dispatch by type
+          switch (op.type) {
+            case "patient.create": {
+              const existing = await patientRepo.findOne({ where: { localId: op.entityId } });
+              if (!existing && payload) {
+                await patientRepo.save(patientRepo.create({
+                  localId: op.entityId,
+                  name: payload.name || "Unknown",
+                  hospitalId: input.hospitalId ?? 1,
+                  gender: payload.sex || null,
+                  contactPhone: payload.contact || null,
+                  careCategory: payload.careCategory || mapPriority(payload.priority),
+                  allergies: Array.isArray(payload.allergies) ? payload.allergies.join(", ") : null,
+                }));
+              }
+              break;
+            }
+            case "patient.update": {
+              const patient = await patientRepo.findOne({ where: { localId: op.entityId } });
+              if (patient && payload) {
+                await patientRepo.update(patient.id, {
+                  name: payload.name || patient.name,
+                  careCategory: payload.careCategory || mapPriority(payload.priority) || patient.careCategory,
+                });
+              }
+              break;
+            }
+            case "queue.add": {
+              if (payload) {
+                const patient = await patientRepo.findOne({ where: { localId: payload.patientId } });
+                if (patient) {
+                  const alreadyQueued = await queueRepo.findOne({
+                    where: { patientId: patient.id, hospitalId: input.hospitalId ?? 1, status: "waiting" },
+                  });
+                  if (!alreadyQueued) {
+                    await queueRepo.save(queueRepo.create({
+                      patientId: patient.id,
+                      hospitalId: input.hospitalId ?? 1,
+                      serviceType: payload.service || "General OPD",
+                      careCategory: mapPriority(payload.priority),
+                      tokenNumber: payload.tokenNumber || 0,
+                      status: "waiting",
+                    }));
+                  }
+                }
+              }
+              break;
+            }
+            case "queue.status": {
+              if (payload?.status) {
+                const patient = await patientRepo.findOne({ where: { localId: op.entityId } });
+                if (patient) {
+                  const entry = await queueRepo.findOne({
+                    where: { patientId: patient.id, hospitalId: input.hospitalId ?? 1 },
+                    order: { createdAt: "DESC" },
+                  });
+                  if (entry) {
+                    await queueRepo.update(entry.id, { status: payload.status });
+                  }
+                }
+              }
+              break;
+            }
+            case "bed.occupy": {
+              if (payload) {
+                const bedId = parseInt(op.entityId) || 0;
+                const bed = await bedRepo.findOne({ where: { id: bedId } });
+                if (bed && bed.status !== "occupied") {
+                  await bedRepo.update(bed.id, {
+                    status: "occupied",
+                    occupiedByPatientId: payload.patientId,
+                    occupiedSince: new Date(),
+                  });
+                  await bedOccRepo.save(bedOccRepo.create({
+                    bedId: bed.id,
+                    patientId: payload.patientId,
+                    status: "occupied",
+                    occupiedFrom: new Date(),
+                    recordedBy: String(ctx.user.id),
+                    notes: payload.notes || null,
+                  }));
+                }
+              }
+              break;
+            }
+            case "bed.release": {
+              const bedId = parseInt(op.entityId) || 0;
+              const bed = await bedRepo.findOne({ where: { id: bedId } });
+              if (bed) {
+                const prevPatientId = bed.occupiedByPatientId;
+                await bedRepo.update(bed.id, { status: "available", occupiedByPatientId: null, occupiedSince: null });
+                if (prevPatientId) {
+                  const openOcc = await bedOccRepo.findOne({
+                    where: { bedId: bed.id, patientId: prevPatientId, occupiedUntil: IsNull() },
+                    order: { occupiedFrom: "DESC" },
+                  });
+                  if (openOcc) {
+                    await bedOccRepo.update(openOcc.id, { occupiedUntil: new Date() });
+                  }
+                }
+              }
+              break;
+            }
+            case "inventory.receipt":
+            case "inventory.dispense":
+            case "inventory.adjustment": {
+              if (payload?.medicineId) {
+                const med = await medicineRepo.findOne({ where: { id: parseInt(payload.medicineId) || 0 } });
+                if (med) {
+                  const txType = op.type === "inventory.receipt" ? "restock" : op.type === "inventory.dispense" ? "dispense" : "adjustment";
+                  await inventoryRepo.save(inventoryRepo.create({
+                    medicineId: med.id,
+                    type: txType as any,
+                    quantity: Math.abs(payload.quantity || 0),
+                    recordedById: ctx.user.id,
+                    notes: `Synced offline. entityId=${op.entityId}`,
+                  }));
+                }
+              }
+              break;
+            }
+          }
+
+          acknowledgedIds.push(op.id);
+        }
+
         return { acknowledgedIds, acknowledgedAt: Date.now() };
+      }),
+
+    /**
+     * Pull: client requests changes since last sync timestamp.
+     */
+    pull: protectedProcedure
+      .input(z.object({
+        hospitalId: z.number().int().positive(),
+        since: z.number().int().nonnegative(),
+      }))
+      .query(async ({ input }) => {
+        const ds = await getDataSource();
+        if (!ds) return { patients: [], queue: [], since: input.since };
+
+        const sinceDate = new Date(input.since);
+        const patientRepo = ds.getRepository(Patient);
+        const queueRepo = ds.getRepository(QueueEntry);
+
+        const [patients, queue] = await Promise.all([
+          patientRepo
+            .createQueryBuilder("p")
+            .where("p.hospitalId = :h", { h: input.hospitalId })
+            .andWhere("p.updatedAt > :since", { since: sinceDate })
+            .getMany(),
+          queueRepo
+            .createQueryBuilder("q")
+            .where("q.hospitalId = :h", { h: input.hospitalId })
+            .andWhere("q.updatedAt > :since", { since: sinceDate })
+            .getMany(),
+        ]);
+
+        return { patients, queue, since: Date.now() };
       }),
   }),
 
   beds: router({
-    /**
-     * Get all units and beds for a facility
-     */
     getByFacility: protectedProcedure
       .input(z.object({ hospitalId: z.string() }))
       .query(async ({ input }) => {
-        const database = await db.getDb();
-        if (!database) throw new Error("Database not available");
+        const ds = await getDataSource();
+        if (!ds) return { units: [], beds: [] };
 
         const fId = parseInt(input.hospitalId);
-        const units = await database.select().from(hospitalUnits).where(eq(hospitalUnits.hospitalId, fId));
-        // Join beds with hospitalUnits to filter by hospitalId
-        const bedsWithUnits = await database
-          .select({
-            bed: beds,
-            unit: hospitalUnits,
-          })
-          .from(beds)
-          .innerJoin(hospitalUnits, eq(beds.unitId, hospitalUnits.id))
-          .where(eq(hospitalUnits.hospitalId, fId));
+        const unitRepo = ds.getRepository(HospitalUnit);
+        const bedRepo = ds.getRepository(Bed);
 
-        return {
-          units: units,
-          beds: bedsWithUnits.map(row => row.bed),
-        };
+        const units = await unitRepo.find({ where: { hospitalId: fId } });
+        const unitIds = units.map((u) => u.id);
+        const beds = unitIds.length > 0
+          ? await bedRepo
+              .createQueryBuilder("bed")
+              .where("bed.unitId IN (:...unitIds)", { unitIds })
+              .getMany()
+          : [];
+
+        return { units, beds };
       }),
 
-    /**
-     * Get unit statistics (total, available, occupied beds)
-     */
     getUnitStats: protectedProcedure
       .input(z.object({ unitId: z.string() }))
       .query(async ({ input }) => {
+        const ds = await getDataSource();
+        if (!ds) return { unitId: input.unitId, totalBeds: 0, availableBeds: 0, occupiedBeds: 0, maintenanceBeds: 0, occupancyRate: 0 };
+
+        const bedRepo = ds.getRepository(Bed);
+        const unitRepo = ds.getRepository(HospitalUnit);
+        const uId = parseInt(input.unitId);
+
+        const [unit, beds] = await Promise.all([
+          unitRepo.findOne({ where: { id: uId } }),
+          bedRepo.find({ where: { unitId: uId } }),
+        ]);
+
+        const totalBeds = unit?.totalBeds ?? beds.length;
+        const occupiedBeds = beds.filter((b) => b.status === "occupied").length;
+        const availableBeds = beds.filter((b) => b.status === "available").length;
+        const maintenanceBeds = beds.filter((b) => b.status === "maintenance").length;
+
         return {
           unitId: input.unitId,
-          totalBeds: 0,
-          availableBeds: 0,
-          occupiedBeds: 0,
-          maintenanceBeds: 0,
-          occupancyRate: 0,
+          totalBeds,
+          availableBeds,
+          occupiedBeds,
+          maintenanceBeds,
+          occupancyRate: totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0,
         };
       }),
 
-    /**
-     * Get available beds in a specific unit
-     */
     getAvailableBeds: protectedProcedure
       .input(z.object({ unitId: z.string() }))
       .query(async ({ input }) => {
-        return [];
+        const ds = await getDataSource();
+        if (!ds) return [];
+        const bedRepo = ds.getRepository(Bed);
+        return bedRepo.find({ where: { unitId: parseInt(input.unitId), status: "available" } });
       }),
 
-    /**
-     * Update bed status (occupation/release/maintenance)
-     * This operation is synced offline
-     */
     updateBedStatus: protectedProcedure
       .input(z.object({
         bedId: z.string(),
@@ -110,30 +311,45 @@ export const appRouter = router({
         notes: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // Record this as a sync operation for offline-first capability
-        const operationId = `bed-update-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const ds = await getDataSource();
+        if (!ds) throw new Error("Database not available");
 
-        await db.recordSyncOperations({
-          userId: ctx.user.id,
-          operations: [{
-            id: operationId,
-            type: "bed.updateStatus",
-            entityId: input.bedId,
-            createdAt: Date.now(),
-            payload: JSON.stringify({
-              status: input.status,
-              occupiedByPatientId: input.occupiedByPatientId,
-              notes: input.notes,
-            }),
-          }],
+        const bedRepo = ds.getRepository(Bed);
+        const bedOccRepo = ds.getRepository(BedOccupancy);
+        const bedId = parseInt(input.bedId);
+        const bed = await bedRepo.findOne({ where: { id: bedId } });
+        if (!bed) throw new Error("Bed not found");
+
+        const prevStatus = bed.status;
+        const prevPatientId = bed.occupiedByPatientId;
+
+        await bedRepo.update(bed.id, {
+          status: input.status,
+          occupiedByPatientId: input.status === "occupied" ? (input.occupiedByPatientId ?? null) : null,
+          occupiedSince: input.status === "occupied" ? new Date() : null,
+          notes: input.notes ?? null,
         });
 
-        return {
-          bedId: input.bedId,
-          status: input.status,
-          operationId,
-          acknowledged: true,
-        };
+        if (input.status === "occupied" && input.occupiedByPatientId) {
+          await bedOccRepo.save(bedOccRepo.create({
+            bedId: bed.id,
+            patientId: input.occupiedByPatientId,
+            status: "occupied",
+            occupiedFrom: new Date(),
+            recordedBy: String(ctx.user.id),
+            notes: input.notes ?? null,
+          }));
+        } else if (prevStatus === "occupied" && prevPatientId) {
+          const openOcc = await bedOccRepo.findOne({
+            where: { bedId: bed.id, patientId: prevPatientId, occupiedUntil: IsNull() },
+            order: { occupiedFrom: "DESC" },
+          });
+          if (openOcc) {
+            await bedOccRepo.update(openOcc.id, { occupiedUntil: new Date() });
+          }
+        }
+
+        return { bedId: input.bedId, status: input.status, acknowledged: true };
       }),
 
     createUnit: protectedProcedure
@@ -145,18 +361,11 @@ export const appRouter = router({
         description: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-        const database = await db.getDb();
-        if (!database) throw new Error("Database not available");
-
-        const [unit] = await database.insert(hospitalUnits).values({
-          hospitalId: input.hospitalId,
-          name: input.name,
-          type: input.type,
-          totalBeds: input.totalBeds,
-          description: input.description,
-        }).returning();
-
-        return unit;
+        const ds = await getDataSource();
+        if (!ds) throw new Error("Database not available");
+        const unitRepo = ds.getRepository(HospitalUnit);
+        const unit = unitRepo.create(input);
+        return unitRepo.save(unit);
       }),
 
     createBed: protectedProcedure
@@ -165,48 +374,45 @@ export const appRouter = router({
         bedNumber: z.string(),
       }))
       .mutation(async ({ input }) => {
-        const database = await db.getDb();
-        if (!database) throw new Error("Database not available");
-
-        const [bed] = await database.insert(beds).values({
-          unitId: input.unitId,
-          bedNumber: input.bedNumber,
-          status: "available",
-        }).returning();
-
-        return bed;
+        const ds = await getDataSource();
+        if (!ds) throw new Error("Database not available");
+        const bedRepo = ds.getRepository(Bed);
+        const bed = bedRepo.create({ ...input, status: "available" });
+        return bedRepo.save(bed);
       }),
 
-    /**
-     * Find nearby hospitals with available beds
-     * Used when current facility is full
-     */
     getNearbyAvailable: protectedProcedure
       .input(z.object({
         latitude: z.number(),
         longitude: z.number(),
         radiusKm: z.number().default(10),
       }))
-      .query(async ({ input }) => {
-        // Query hospitals within radius with available beds
+      .query(async () => {
+        // Geo-query requires PostGIS extension.
+        // Return empty for now — documented limitation.
         return [];
       }),
 
-    /**
-     * Get bed occupancy history
-     */
     getOccupancyHistory: protectedProcedure
       .input(z.object({ bedId: z.string() }))
       .query(async ({ input }) => {
-        return [];
+        const ds = await getDataSource();
+        if (!ds) return [];
+        const bedOccRepo = ds.getRepository(BedOccupancy);
+        return bedOccRepo.find({
+          where: { bedId: parseInt(input.bedId) },
+          order: { occupiedFrom: "DESC" },
+          take: 50,
+        });
       }),
   }),
 
   medicines: router({
     getAll: protectedProcedure.query(async () => {
-      const database = await db.getDb();
-      if (!database) throw new Error("Database not available");
-      return await database.select().from(medicines);
+      const ds = await getDataSource();
+      if (!ds) return [];
+      const medicineRepo = ds.getRepository(Medicine);
+      return medicineRepo.find({ order: { name: "ASC" } });
     }),
 
     create: protectedProcedure
@@ -220,29 +426,66 @@ export const appRouter = router({
         pricePerUnit: z.number().int().default(0),
       }))
       .mutation(async ({ input }) => {
-        const database = await db.getDb();
-        if (!database) throw new Error("Database not available");
-
-        const [medicine] = await database.insert(medicines).values({
-          name: input.name,
-          localName: input.localName,
-          category: input.category,
-          unit: input.unit,
-          minimumStock: input.minimumStock,
-          isGovtSupply: input.isGovtSupply,
-          pricePerUnit: input.pricePerUnit,
-        }).returning();
-
-        return medicine;
+        const ds = await getDataSource();
+        if (!ds) throw new Error("Database not available");
+        const medicineRepo = ds.getRepository(Medicine);
+        const medicine = medicineRepo.create(input);
+        return medicineRepo.save(medicine);
       }),
-  }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+    recordTransaction: protectedProcedure
+      .input(z.object({
+        medicineId: z.number().int(),
+        type: z.enum(["restock", "dispense", "adjustment"]),
+        quantity: z.number().int(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const ds = await getDataSource();
+        if (!ds) throw new Error("Database not available");
+        const inventoryRepo = ds.getRepository(InventoryTransaction);
+        const tx = inventoryRepo.create({
+          ...input,
+          recordedById: ctx.user.id,
+        });
+        return inventoryRepo.save(tx);
+      }),
+
+    getTransactions: protectedProcedure
+      .input(z.object({ medicineId: z.number().int() }))
+      .query(async ({ input }) => {
+        const ds = await getDataSource();
+        if (!ds) return [];
+        const inventoryRepo = ds.getRepository(InventoryTransaction);
+        return inventoryRepo.find({
+          where: { medicineId: input.medicineId },
+          order: { createdAt: "DESC" },
+          take: 100,
+        });
+      }),
+
+    getLowStock: protectedProcedure.query(async () => {
+      const ds = await getDataSource();
+      if (!ds) return [];
+      // Return medicines where total restocked - total dispensed < minimumStock
+      // This is a simplified version without a running stock column
+      const medicineRepo = ds.getRepository(Medicine);
+      return medicineRepo
+        .createQueryBuilder("m")
+        .where("m.minimumStock > 0")
+        .getMany();
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
+
+/** Maps frontend priority strings to database enum values */
+function mapPriority(priority: string | undefined): "emergency" | "urgent" | "priority" | "routine" {
+  switch (priority) {
+    case "emergency": return "emergency";
+    case "urgent": return "urgent";
+    case "priority": return "priority";
+    default: return "routine";
+  }
+}

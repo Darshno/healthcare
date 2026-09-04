@@ -2,11 +2,11 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { BedsController } from "./beds.controller";
 import { BedsService } from "./beds.service";
+import { Bed, HospitalUnit, BedOccupancy, Hospital } from "../../database/entities";
 
 @Module({
   imports: [
-    // Import bed and unit entities when database entities are created
-    // TypeOrmModule.forFeature([Bed, HospitalUnit, BedOccupancy])
+    TypeOrmModule.forFeature([Bed, HospitalUnit, BedOccupancy, Hospital]),
   ],
   controllers: [BedsController],
   providers: [BedsService],

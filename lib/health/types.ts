@@ -115,6 +115,12 @@ export type OfflineOperation = {
   type: string;
   entityId: string;
   createdAt: number;
+  /** Full entity snapshot serialised to JSON string — must survive round-trip to server */
+  payload?: string;
+  /** Device that created the operation for conflict attribution */
+  deviceId?: string;
+  /** Optimistic version of the entity at time of operation */
+  version?: number;
 };
 
 export type PriorityInput = TriageFlagInput;

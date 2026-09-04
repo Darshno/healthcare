@@ -51,11 +51,18 @@ export class QueueEntry {
   @Column({ type: "timestamptz", nullable: true })
   completedAt: Date | null;
 
+  @Column({ type: "int", default: 1 })
+  version: number;
+
+  @Column({ type: "varchar", length: 128, nullable: true })
+  deviceId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
   @UpdateDateColumn()
   updatedAt: Date;
+
 
   @ManyToOne(() => Patient, (p) => p.queueEntries, { onDelete: "CASCADE" })
   @JoinColumn({ name: "patientId" })

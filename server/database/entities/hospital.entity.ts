@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany } f
 import { User } from "./user.entity";
 import { Patient } from "./patient.entity";
 import { QueueEntry } from "./queue-entry.entity";
+import { HospitalUnit } from "./hospital-unit.entity";
 
 @Entity("hospitals")
 export class Hospital {
@@ -25,4 +26,7 @@ export class Hospital {
 
   @OneToMany(() => QueueEntry, (qe) => qe.hospital)
   queueEntries: QueueEntry[];
+
+  @OneToMany(() => HospitalUnit, (unit) => unit.hospital)
+  units: HospitalUnit[];
 }

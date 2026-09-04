@@ -1,124 +1,89 @@
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { InsertUser, syncOperations, users } from "../drizzle/schema";
+import { getDataSource } from "./database/datasource";
+import { User, SyncOperation } from "./database/entities";
 import { ENV } from "./_core/env";
 
-let _db: ReturnType<typeof drizzle> | null = null;
+export type InsertUser = {
+  openId: string;
+  name?: string | null;
+  email?: string | null;
+  loginMethod?: string | null;
+  role?: "PATIENT" | "ASHA_WORKER" | "RECEPTIONIST" | "DOCTOR" | "CHIEF_DOCTOR" | "ADMIN" | "chief_doc" | "doctor" | "asha" | "receptionist" | "admin";
+  hospitalId?: number;
+  lastSignedIn?: Date;
+  passwordHash?: string | null;
+};
 
-export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
-  }
-  return _db;
+export async function getUserByOpenId(openId: string): Promise<User | undefined> {
+  const ds = await getDataSource();
+  if (!ds) return undefined;
+
+  const repo = ds.getRepository(User);
+  const user = await repo.findOne({ where: { openId } });
+  return user ?? undefined;
 }
 
-export async function upsertUser(user: InsertUser): Promise<void> {
+export async function upsertUser(user: InsertUser): Promise<User | undefined> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
   }
 
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
+  const ds = await getDataSource();
+  if (!ds) return undefined;
 
-  try {
-    const values: InsertUser = {
+  const repo = ds.getRepository(User);
+  let existing = await repo.findOne({ where: { openId: user.openId } });
+
+  if (!existing) {
+    existing = repo.create({
       openId: user.openId,
       hospitalId: user.hospitalId ?? 1,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.hospitalId !== undefined) {
-      values.hospitalId = user.hospitalId;
-      updateSet.hospitalId = user.hospitalId;
-    }
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onConflictDoUpdate({
-      target: users.openId,
-      set: updateSet,
+      name: user.name ?? null,
+      email: user.email ?? null,
+      loginMethod: user.loginMethod ?? null,
+      passwordHash: user.passwordHash ?? null,
+      role: (user.role as any) ?? (user.openId === ENV.ownerOpenId ? "ADMIN" : "DOCTOR"),
+      lastSignedIn: user.lastSignedIn ?? new Date(),
     });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
-}
-
-export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
+  } else {
+    if (user.name !== undefined) existing.name = user.name;
+    if (user.email !== undefined) existing.email = user.email;
+    if (user.loginMethod !== undefined) existing.loginMethod = user.loginMethod;
+    if (user.hospitalId !== undefined) existing.hospitalId = user.hospitalId;
+    if (user.passwordHash !== undefined) existing.passwordHash = user.passwordHash;
+    if (user.role !== undefined) existing.role = user.role as any;
+    if (user.lastSignedIn !== undefined) existing.lastSignedIn = user.lastSignedIn;
   }
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  return await repo.save(existing);
 }
 
 export async function recordSyncOperations(input: {
   userId: number;
   hospitalId?: number;
-  operations: Array<{ id: string; type: string; entityId: string; createdAt: number; payload?: string }>;
+  operations: Array<{ id: string; type: string; entityId: string; createdAt: number; payload?: string; deviceId?: string; version?: number }>;
 }) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  const ds = await getDataSource();
+  if (!ds) throw new Error("Database not available");
 
-  for (const operation of input.operations) {
-    await db
-      .insert(syncOperations)
-      .values({
-        operationId: operation.id,
+  const repo = ds.getRepository(SyncOperation);
+
+  for (const op of input.operations) {
+    let existing = await repo.findOne({ where: { operationId: op.id } });
+    if (!existing) {
+      existing = repo.create({
+        operationId: op.id,
         userId: input.userId,
         hospitalId: input.hospitalId ?? null,
-        operationType: operation.type,
-        entityId: operation.entityId,
-        payload: operation.payload ?? null,
-        clientCreatedAt: new Date(operation.createdAt),
-      })
-      .onConflictDoUpdate({
-        target: syncOperations.operationId,
-        set: { receivedAt: new Date() },
+        operationType: op.type,
+        entityId: op.entityId,
+        payload: op.payload ?? null,
+        deviceId: op.deviceId ?? null,
+        version: op.version ?? 1,
+        clientCreatedAt: new Date(op.createdAt),
       });
+      await repo.save(existing);
+    }
   }
 
-  return input.operations.map((operation) => operation.id);
+  return input.operations.map((op) => op.id);
 }

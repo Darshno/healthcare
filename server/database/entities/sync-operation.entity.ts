@@ -28,6 +28,12 @@ export class SyncOperation {
   @Column({ type: "varchar", length: 128 })
   entityId: string;
 
+  @Column({ type: "varchar", length: 128, nullable: true })
+  deviceId: string | null;
+
+  @Column({ type: "int", default: 1 })
+  version: number;
+
   @Column({ type: "text", nullable: true })
   payload: string | null;
 
@@ -41,3 +47,4 @@ export class SyncOperation {
   @JoinColumn({ name: "userId" })
   user: User;
 }
+

@@ -165,9 +165,18 @@ export async function analyzeDiseaseWithGemini(diseaseText: string): Promise<{
 }> {
   const geminiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
 
+  const ruleBaseline = analyzeDiseaseRuleBased(diseaseText);
+
   if (!geminiKey || !diseaseText.trim()) {
-    return analyzeDiseaseRuleBased(diseaseText);
+    return ruleBaseline;
   }
+
+  const priorityRanks: Record<Priority, number> = {
+    emergency: 0,
+    urgent: 1,
+    priority: 2,
+    routine: 3,
+  };
 
   try {
     const response = await fetch(
@@ -204,9 +213,15 @@ Return ONLY a JSON object with this exact structure:
       const cleanedJson = text.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(cleanedJson);
       if (parsed.priority && parsed.recommendedSpecialization) {
+        let finalPriority: Priority = parsed.priority;
+        // Deterministic Safety Floor: AI cannot downgrade a higher risk category calculated by rules
+        if (priorityRanks[finalPriority] > priorityRanks[ruleBaseline.priority]) {
+          finalPriority = ruleBaseline.priority;
+        }
+
         return {
-          priority: parsed.priority,
-          priorityReason: parsed.priorityReason || "vitalConcern",
+          priority: finalPriority,
+          priorityReason: parsed.priorityReason || ruleBaseline.priorityReason,
           recommendedSpecialization: parsed.recommendedSpecialization,
           clinicalSummary: parsed.clinicalSummary || "AI-assessed triage.",
         };
@@ -216,8 +231,9 @@ Return ONLY a JSON object with this exact structure:
     console.warn("Gemini API call skipped or failed, using rule engine:", err);
   }
 
-  return analyzeDiseaseRuleBased(diseaseText);
+  return ruleBaseline;
 }
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Doctor Matching Engine: Finds Best Suited or Free Doctor in Hospital

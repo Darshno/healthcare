@@ -30,6 +30,7 @@ export function serializeOperation(operation: OfflineOperation): PushOperation {
     type: operation.type,
     entityId: operation.entityId,
     createdAt: operation.createdAt,
+    payload: operation.payload,
   };
 }
 
