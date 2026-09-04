@@ -163,6 +163,8 @@ type HealthContextValue = {
   getPatientAppointments: (patientId: string) => Appointment[];
   getPatientOrders: (patientId: string) => MedicineOrder[];
   getPatientActiveQueue: (patientId: string) => QueueEntry | undefined;
+  createVaccinationSchedule: (patientId: string, dob?: Date) => void;
+  markVaccineAdministered: (recordId: string, doctorName: string) => void;
 };
 
 const HealthContext = createContext<HealthContextValue | undefined>(undefined);
@@ -182,6 +184,7 @@ const writeBedsDebounced       = createDebouncedWriter<HealthState["beds"]>("bed
 const writeUnitsDebounced      = createDebouncedWriter<HealthState["hospitalUnits"]>("units", 600);
 const writeOpsDebounced        = createDebouncedWriter<HealthState["operations"]>("ops", 300);
 const writeInventoryDebounced  = createDebouncedWriter<HealthState["inventoryTransactions"]>("inventory", 500);
+const writeVaccinationsDebounced = createDebouncedWriter<HealthState["vaccinationRecords"]>("vaccinations", 500);
 
 export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ syncTransport?: SyncTransport }>) {
   const [state, setState] = useState<HealthState>(EMPTY_STATE);
@@ -208,6 +211,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
           beds:                 sections.beds       as HealthState["beds"],
           hospitalUnits:        sections.units      as HealthState["hospitalUnits"],
           operations:           sections.ops        as HealthState["operations"],
+          vaccinationRecords:   (sections.vaccinations ?? []) as HealthState["vaccinationRecords"],
           language:             (sections.meta?.language as HealthState["language"]) ?? "en",
           lastSyncedAt:         sections.meta?.lastSyncedAt ?? 0,
           currentUser:          previous.currentUser ?? (sections.meta?.currentUser as HealthState["currentUser"]) ?? null,
@@ -229,6 +233,7 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     writeUnitsDebounced(state.hospitalUnits);
     writeOpsDebounced(state.operations);
     writeInventoryDebounced(state.inventoryTransactions);
+    writeVaccinationsDebounced(state.vaccinationRecords);
     // Meta (lightweight, write immediately)
     const meta: MetaBundle = {
       language: state.language,
@@ -930,6 +935,85 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     return () => clearInterval(id);
   }, [isHydrated, state.operations.length]);
 
+  const createVaccinationSchedule = useCallback((patientId: string, dob?: Date) => {
+    const { currentUser } = state;
+    if (!currentUser) return;
+    
+    // Default to today if no DOB provided
+    const baseDate = dob || new Date();
+    
+    // Helper to add weeks to a date
+    const addWeeks = (date: Date, weeks: number) => {
+      const result = new Date(date);
+      result.setDate(result.getDate() + weeks * 7);
+      return result;
+    };
+    
+    const newRecords: VaccinationRecord[] = [
+      {
+        id: makeId("vac"),
+        patientId,
+        facilityId: currentUser.facilityId,
+        vaccineId: "bcg",
+        dueDate: baseDate.toISOString().split("T")[0],
+        administered: false,
+        notifiedDays: [],
+        createdAt: Date.now(),
+        syncState: "pending"
+      },
+      {
+        id: makeId("vac"),
+        patientId,
+        facilityId: currentUser.facilityId,
+        vaccineId: "opv0",
+        dueDate: baseDate.toISOString().split("T")[0],
+        administered: false,
+        notifiedDays: [],
+        createdAt: Date.now(),
+        syncState: "pending"
+      },
+      {
+        id: makeId("vac"),
+        patientId,
+        facilityId: currentUser.facilityId,
+        vaccineId: "hepb0",
+        dueDate: baseDate.toISOString().split("T")[0],
+        administered: false,
+        notifiedDays: [],
+        createdAt: Date.now(),
+        syncState: "pending"
+      },
+      {
+        id: makeId("vac"),
+        patientId,
+        facilityId: currentUser.facilityId,
+        vaccineId: "dpt1",
+        dueDate: addWeeks(baseDate, 6).toISOString().split("T")[0],
+        administered: false,
+        notifiedDays: [],
+        createdAt: Date.now(),
+        syncState: "pending"
+      }
+    ];
+
+    setState((prev) => {
+      const next = { ...prev, vaccinationRecords: [...prev.vaccinationRecords, ...newRecords] };
+      return addOperation(next, "CREATE_VACCINATION_SCHEDULE", patientId);
+    });
+  }, [state.currentUser]);
+
+  const markVaccineAdministered = useCallback((recordId: string, doctorName: string) => {
+    setState((prev) => {
+      const nextRecords = prev.vaccinationRecords.map(r => 
+        r.id === recordId 
+          ? { ...r, administered: true, administeredAt: Date.now(), administeredBy: doctorName, syncState: "pending" as SyncState }
+          : r
+      );
+      const nextState = { ...prev, vaccinationRecords: nextRecords };
+      return addOperation(nextState, "MARK_VACCINE_ADMINISTERED", recordId);
+    });
+  }, []);
+
   const value = useMemo<HealthContextValue>(() => ({
     state,
     isHydrated,
@@ -971,7 +1055,9 @@ export function HealthProvider({ children, syncTransport }: PropsWithChildren<{ 
     getPatientAppointments: (patientId) => state.appointments.filter((a) => a.patientId === patientId && a.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
     getPatientOrders: (patientId) => state.medicineOrders.filter((o) => o.patientId === patientId && o.facilityId === state.currentUser?.facilityId).sort((a, b) => b.createdAt - a.createdAt),
     getPatientActiveQueue: (patientId) => state.queue.find((q) => q.patientId === patientId && q.status !== "completed" && q.facilityId === state.currentUser?.facilityId),
-  }), [addEncounter, addMedicine, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setCurrentUser, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus]);
+    createVaccinationSchedule,
+    markVaccineAdministered,
+  }), [addEncounter, addMedicine, bookAppointment, cancelAppointment, createReferral, getFacilityStats, getFacilityUnits, getNearbyHospitalsWithBeds, getBedsByUnit, getUnitStats, isHydrated, joinQueue, occupyBed, orderMedicine, overrideQueuePriority, recordInventoryTransaction, registerPatient, releaseBed, requestEmergencyAppointment, setLanguage, setCurrentUser, setMaintenanceBed, state, syncNow, syncing, syncError, updateMedicineOrderStatus, updateQueueStatus, updateReferralStatus, createVaccinationSchedule, markVaccineAdministered]);
 
   return <HealthContext.Provider value={value}>{children}</HealthContext.Provider>;
 }

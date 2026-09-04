@@ -5,6 +5,7 @@ import { PrimaryButton, PriorityBadge, SyncPill, commonStyles } from "@/componen
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useHealth } from "@/lib/health/store";
 import type { Priority } from "@/lib/health/types";
+import { VACCINES } from "@/lib/health/types";
 
 export default function PatientDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -31,6 +32,7 @@ export default function PatientDetailScreen() {
   const referrals = state.referrals
     .filter((referral) => referral.patientId === patient.id)
     .sort((a, b) => b.updatedAt - a.updatedAt);
+  const vaccines = state.vaccinationRecords.filter(v => v.patientId === patient.id);
 
   const saveEncounter = () => {
     if (!note.trim()) {
@@ -83,6 +85,32 @@ export default function PatientDetailScreen() {
             <Text style={[commonStyles.body, { marginTop: 3 }]}>{patient.allergies?.length ? patient.allergies.join(", ") : "No allergies recorded"}</Text>
           </View>
         </Section>
+
+        {vaccines.length > 0 && (
+          <Section title="Vaccination Status">
+            <View style={[commonStyles.card, styles.card, { gap: 12 }]}>
+              {VACCINES.map(v => {
+                const record = vaccines.find(r => r.vaccineId === v.id);
+                if (!record) return null;
+                return (
+                  <View key={v.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View>
+                      <Text style={{ color: "#18332F", fontSize: 14, fontWeight: "800" }}>{v.label}</Text>
+                      <Text style={{ color: "#6C817C", fontSize: 12 }}>{v.description}</Text>
+                    </View>
+                    <View>
+                      {record.administered ? (
+                        <Text style={{ color: "#198754", fontSize: 13, fontWeight: "800" }}>✅ Given</Text>
+                      ) : (
+                        <Text style={{ color: "#B66A00", fontSize: 13, fontWeight: "800" }}>⏳ Due: {record.dueDate}</Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </Section>
+        )}
 
         <Section title={t("referrals") + ` (${referrals.length})`}>
           {referrals.length ? referrals.map((referral) => (

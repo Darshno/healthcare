@@ -25,6 +25,7 @@ export const STORAGE_KEYS = {
   beds:       "rha.beds.v4",
   units:      "rha.units.v4",
   ops:        "rha.ops.v4",
+  vaccinations: "rha.vaccinations.v4",
   meta:       "rha.meta.v4",       // language, lastSyncedAt, currentUser
 } as const;
 
@@ -93,6 +94,7 @@ export type HydratedSections = {
   beds:       unknown[];
   units:      unknown[];
   ops:        unknown[];
+  vaccinations: unknown[];
   meta:       MetaBundle | null;
 };
 
@@ -112,6 +114,7 @@ export async function hydrateAll(): Promise<HydratedSections> {
       readSection<unknown[]>("beds"),
       readSection<unknown[]>("units"),
       readSection<unknown[]>("ops"),
+      readSection<unknown[]>("vaccinations"),
       readSection<MetaBundle>("meta"),
     ]);
 
@@ -125,6 +128,7 @@ export async function hydrateAll(): Promise<HydratedSections> {
     beds:       beds       ?? [],
     units:      units      ?? [],
     ops:        ops        ?? [],
+    vaccinations: vaccinations ?? [],
     meta,
   };
 }
