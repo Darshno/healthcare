@@ -4,7 +4,7 @@ import type {
   TriageFlagInput,
 } from "@/shared/triage";
 
-export type AppLanguage = "en" | "hi";
+export type AppLanguage = "en" | "hi" | "ta" | "mr";
 
 export type SyncState = "synced" | "pending" | "conflict";
 export type Priority = TriagePriority;

@@ -54,11 +54,17 @@ export default function OperationsHome() {
             <Text style={commonStyles.title}>{t("operations")}</Text>
           </View>
           <Pressable
-            onPress={() => setLanguage(state.language === "en" ? "hi" : "en")}
+            onPress={() => {
+              const langs: Array<"en" | "hi" | "ta" | "mr"> = ["en", "hi", "ta", "mr"];
+              const next = langs[(langs.indexOf(state.language) + 1) % langs.length];
+              setLanguage(next);
+            }}
             style={({ pressed }) => [styles.language, { opacity: pressed ? 0.65 : 1 }]}
           >
             <MaterialIcons name="translate" size={17} color="#087E7B" />
-            <Text style={styles.languageText}>{state.language === "en" ? "हिन्दी" : "English"}</Text>
+            <Text style={styles.languageText}>
+              {state.language === "en" ? "English" : state.language === "hi" ? "हिन्दी" : state.language === "ta" ? "தமிழ்" : "मराठी"}
+            </Text>
           </Pressable>
         </View>
 
