@@ -1,5 +1,26 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+function getBaseApiUrl(): string {
+  if (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_BASE_URL) {
+    return process.env.EXPO_PUBLIC_API_BASE_URL.replace(/\/$/, "");
+  }
+  if (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_SERVER_URL) {
+    return process.env.EXPO_PUBLIC_SERVER_URL.replace(/\/$/, "");
+  }
+  if (typeof window !== "undefined" && window.location) {
+    const { protocol, hostname, port } = window.location;
+    const apiHostname = hostname.replace(/^8081-/, "3000-");
+    if (apiHostname !== hostname) {
+      return `${protocol}//${apiHostname}`;
+    }
+    if (port === "8081") {
+      return `${protocol}//${hostname}:3000`;
+    }
+    return window.location.origin;
+  }
+  return "";
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────────────────────────────────────────
@@ -175,18 +196,20 @@ export async function storeUserSession(profile: UserProfile, token?: string): Pr
     if (!activeToken) {
       // Try to acquire real server JWT token if available
       try {
-        const baseUrl = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
-        const res = await fetch(`${baseUrl}/api/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ openId: profile.id }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          activeToken = data.accessToken;
+        const baseUrl = getBaseApiUrl();
+        if (baseUrl) {
+          const res = await fetch(`${baseUrl}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ openId: profile.id }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            activeToken = data.accessToken;
+          }
         }
       } catch {
-        /* server offline during local dev */
+        /* server offline or unconfigured during local dev */
       }
     }
 
