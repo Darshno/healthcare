@@ -17,8 +17,8 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 import {
   createUserProfile,
   authenticateUser,
-  type DoctorProfile,
 } from "../lib/health/userAuth";
+import type { DoctorProfile } from "../lib/health/userAuth";
 
 describe("Doctor Authentication & Profile Creation", () => {
   it("creates a doctor profile with formatted prefix and details", async () => {

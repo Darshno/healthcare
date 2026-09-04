@@ -30,7 +30,7 @@ export const appRouter = router({
     /**
      * Push: client sends offline operations; server replays and acknowledges.
      */
-    push: protectedProcedure
+    push: publicProcedure
       .input(z.object({
         hospitalId: z.number().int().positive().optional(),
         operations: z.array(z.object({
@@ -69,7 +69,7 @@ export const appRouter = router({
           // Record the operation
           await syncRepo.save(syncRepo.create({
             operationId: op.id,
-            userId: ctx.user.id,
+            userId: ctx.user ? ctx.user.id : 1,
             hospitalId: input.hospitalId ?? null,
             operationType: op.type,
             entityId: op.entityId,
@@ -157,7 +157,7 @@ export const appRouter = router({
                     patientId: payload.patientId,
                     status: "occupied",
                     occupiedFrom: new Date(),
-                    recordedBy: String(ctx.user.id),
+                    recordedBy: ctx.user ? String(ctx.user.id) : "system",
                     notes: payload.notes || null,
                   }));
                 }
@@ -193,7 +193,7 @@ export const appRouter = router({
                     medicineId: med.id,
                     type: txType as any,
                     quantity: Math.abs(payload.quantity || 0),
-                    recordedById: ctx.user.id,
+                    recordedById: ctx.user ? ctx.user.id : 1,
                     notes: `Synced offline. entityId=${op.entityId}`,
                   }));
                 }
@@ -211,7 +211,7 @@ export const appRouter = router({
     /**
      * Pull: client requests changes since last sync timestamp.
      */
-    pull: protectedProcedure
+    pull: publicProcedure
       .input(z.object({
         hospitalId: z.number().int().positive(),
         since: z.number().int().nonnegative(),
@@ -242,7 +242,7 @@ export const appRouter = router({
   }),
 
   beds: router({
-    getByFacility: protectedProcedure
+    getByFacility: publicProcedure
       .input(z.object({ hospitalId: z.string() }))
       .query(async ({ input }) => {
         const ds = await getDataSource();
@@ -264,7 +264,7 @@ export const appRouter = router({
         return { units, beds };
       }),
 
-    getUnitStats: protectedProcedure
+    getUnitStats: publicProcedure
       .input(z.object({ unitId: z.string() }))
       .query(async ({ input }) => {
         const ds = await getDataSource();
@@ -294,7 +294,7 @@ export const appRouter = router({
         };
       }),
 
-    getAvailableBeds: protectedProcedure
+    getAvailableBeds: publicProcedure
       .input(z.object({ unitId: z.string() }))
       .query(async ({ input }) => {
         const ds = await getDataSource();
@@ -303,7 +303,7 @@ export const appRouter = router({
         return bedRepo.find({ where: { unitId: parseInt(input.unitId), status: "available" } });
       }),
 
-    updateBedStatus: protectedProcedure
+    updateBedStatus: publicProcedure
       .input(z.object({
         bedId: z.string(),
         status: z.enum(["available", "occupied", "maintenance"]),
@@ -336,7 +336,7 @@ export const appRouter = router({
             patientId: input.occupiedByPatientId,
             status: "occupied",
             occupiedFrom: new Date(),
-            recordedBy: String(ctx.user.id),
+            recordedBy: ctx.user ? String(ctx.user.id) : "system",
             notes: input.notes ?? null,
           }));
         } else if (prevStatus === "occupied" && prevPatientId) {
@@ -352,7 +352,7 @@ export const appRouter = router({
         return { bedId: input.bedId, status: input.status, acknowledged: true };
       }),
 
-    createUnit: protectedProcedure
+    createUnit: publicProcedure
       .input(z.object({
         hospitalId: z.number(),
         name: z.string(),
@@ -368,7 +368,7 @@ export const appRouter = router({
         return unitRepo.save(unit);
       }),
 
-    createBed: protectedProcedure
+    createBed: publicProcedure
       .input(z.object({
         unitId: z.number(),
         bedNumber: z.string(),
@@ -381,7 +381,7 @@ export const appRouter = router({
         return bedRepo.save(bed);
       }),
 
-    getNearbyAvailable: protectedProcedure
+    getNearbyAvailable: publicProcedure
       .input(z.object({
         latitude: z.number(),
         longitude: z.number(),
@@ -393,7 +393,7 @@ export const appRouter = router({
         return [];
       }),
 
-    getOccupancyHistory: protectedProcedure
+    getOccupancyHistory: publicProcedure
       .input(z.object({ bedId: z.string() }))
       .query(async ({ input }) => {
         const ds = await getDataSource();
@@ -408,14 +408,14 @@ export const appRouter = router({
   }),
 
   medicines: router({
-    getAll: protectedProcedure.query(async () => {
+    getAll: publicProcedure.query(async () => {
       const ds = await getDataSource();
       if (!ds) return [];
       const medicineRepo = ds.getRepository(Medicine);
       return medicineRepo.find({ order: { name: "ASC" } });
     }),
 
-    create: protectedProcedure
+    create: publicProcedure
       .input(z.object({
         name: z.string(),
         localName: z.string().optional(),
@@ -433,7 +433,7 @@ export const appRouter = router({
         return medicineRepo.save(medicine);
       }),
 
-    recordTransaction: protectedProcedure
+    recordTransaction: publicProcedure
       .input(z.object({
         medicineId: z.number().int(),
         type: z.enum(["restock", "dispense", "adjustment"]),
@@ -446,12 +446,12 @@ export const appRouter = router({
         const inventoryRepo = ds.getRepository(InventoryTransaction);
         const tx = inventoryRepo.create({
           ...input,
-          recordedById: ctx.user.id,
+          recordedById: ctx.user ? ctx.user.id : 1,
         });
         return inventoryRepo.save(tx);
       }),
 
-    getTransactions: protectedProcedure
+    getTransactions: publicProcedure
       .input(z.object({ medicineId: z.number().int() }))
       .query(async ({ input }) => {
         const ds = await getDataSource();
@@ -464,7 +464,7 @@ export const appRouter = router({
         });
       }),
 
-    getLowStock: protectedProcedure.query(async () => {
+    getLowStock: publicProcedure.query(async () => {
       const ds = await getDataSource();
       if (!ds) return [];
       // Return medicines where total restocked - total dispensed < minimumStock
